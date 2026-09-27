@@ -1489,6 +1489,99 @@ describe('ConvexAuthProvider', () => {
       expect(harness.close).toHaveBeenCalledTimes(0);
     });
 
+    describe('tokenIdentityBaseline', () => {
+      /** A remount without a token, whose first fetch returns `obtained`. */
+      const remount = ({
+        baseline,
+        obtained,
+      }: {
+        baseline: string | null | undefined;
+        obtained: string;
+      }) => {
+        let fetchToken:
+          | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
+          | null = null;
+        const close = mock(async () => {});
+        const client = {
+          setAuth: (fetcher: typeof fetchToken) => {
+            fetchToken = fetcher;
+          },
+          clearAuth: () => {},
+          close,
+        };
+        const authClient = {
+          useSession: () => ({
+            data: { session: { id: 'session' }, user: { id: 'user' } },
+            isPending: false,
+          }),
+          convex: { token: async () => ({ data: { token: obtained } }) },
+          getSession: async () => null,
+          updateSession: () => {},
+          crossDomain: {
+            oneTimeToken: { verify: async () => ({ data: {} }) },
+          },
+        };
+        const onTokenIdentityChange = mock(() => {});
+        const wrapper = ({ children }: { children: ReactNode }) => (
+          <ConvexAuthProvider
+            authClient={authClient as any}
+            client={client as any}
+            onTokenIdentityChange={onTokenIdentityChange}
+            tokenIdentityBaseline={baseline}
+          >
+            {children}
+          </ConvexAuthProvider>
+        );
+        renderHook(() => useAuth(), { wrapper });
+        return {
+          close,
+          onTokenIdentityChange,
+          fetch: (forceRefreshToken: boolean) => {
+            if (!fetchToken) throw new Error('setAuth was not called');
+            return fetchToken({ forceRefreshToken });
+          },
+        };
+      };
+
+      test('a remount without a token refuses a first token of another identity', async () => {
+        const harness = remount({
+          baseline: 'user_a|session_a',
+          obtained: identityJwt('user_b', 'session_b'),
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBeNull();
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.close).toHaveBeenCalledTimes(1);
+        expect(await harness.fetch(true)).toBeNull();
+      });
+
+      test('a remount without a token admits a token of the same identity', async () => {
+        const sameSession = identityJwt('user_a', 'session_a');
+        const harness = remount({
+          baseline: 'user_a|session_a',
+          obtained: sameSession,
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(sameSession);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+        expect(harness.close).toHaveBeenCalledTimes(0);
+      });
+
+      test('without a baseline the first token obtained sets the identity, as before', async () => {
+        const first = identityJwt('user_b', 'session_b');
+        for (const baseline of [undefined, null]) {
+          const harness = remount({ baseline, obtained: first });
+          await flush();
+
+          expect(await harness.fetch(false)).toBe(first);
+          expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+          expect(harness.close).toHaveBeenCalledTimes(0);
+        }
+      });
+    });
+
     test('changes nothing without the option', async () => {
       const refreshed = identityJwt('user_b', 'session_b');
       const harness = guardHarness({ guard: false, refreshed });

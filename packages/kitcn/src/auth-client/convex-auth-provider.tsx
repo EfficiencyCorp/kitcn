@@ -106,6 +106,16 @@ export type ConvexAuthProviderProps = {
    * through. Off when not set.
    */
   onTokenIdentityChange?: () => void;
+  /**
+   * The identity (`sub|sessionId`, as the guard decodes it from a JWT) the
+   * document already speaks for when this provider mounts, for an app that
+   * mounts the provider more than once in one document (for example one per
+   * route group, over a shared Convex client). The guard starts from it
+   * instead of from `initialToken` or the first token obtained, so a remount
+   * without a token still refuses another user's or session's token. Read on
+   * the first render only. Needs `onTokenIdentityChange`.
+   */
+  tokenIdentityBaseline?: string | null;
 };
 
 const defaultMutationHandler = () => {
@@ -340,6 +350,7 @@ export function ConvexAuthProvider({
   isUnauthorized,
   optimisticAuth = false,
   onTokenIdentityChange,
+  tokenIdentityBaseline,
 }: ConvexAuthProviderProps) {
   // Handle cross-domain one-time token
   useOTTHandler(authClient);
@@ -368,6 +379,7 @@ export function ConvexAuthProvider({
         convexQueryClient={convexQueryClient}
         onTokenIdentityChange={onTokenIdentityChange}
         optimisticAuth={optimisticAuth}
+        tokenIdentityBaseline={tokenIdentityBaseline}
       >
         {children}
       </ConvexAuthProviderInner>
@@ -386,6 +398,7 @@ function ConvexAuthProviderInner({
   convexQueryClient,
   optimisticAuth,
   onTokenIdentityChange,
+  tokenIdentityBaseline,
 }: {
   children: ReactNode;
   client: ConvexReactClient;
@@ -393,6 +406,7 @@ function ConvexAuthProviderInner({
   convexQueryClient?: ConvexAuthProviderQueryClient;
   optimisticAuth: boolean;
   onTokenIdentityChange?: () => void;
+  tokenIdentityBaseline?: string | null;
 }) {
   const authStore = useAuthStore();
   convexQueryClient?.updateAuthStore(authStore);
@@ -531,13 +545,15 @@ function ConvexAuthProviderInner({
       .catch(() => {});
   }, [session, isPending, authStore, authClient]);
 
-  // The identity guard (`onTokenIdentityChange`): seeded from the token the
-  // document already holds when it mounts (the SSR token).
+  // The identity guard (`onTokenIdentityChange`): seeded from the baseline
+  // the app hands a remount, else from the token the document already holds
+  // when it mounts (the SSR token).
   const onTokenIdentityChangeRef = useRef(onTokenIdentityChange);
   onTokenIdentityChangeRef.current = onTokenIdentityChange;
   const identityGuardRef = useRef<IdentityGuard | null>(null);
   identityGuardRef.current ??= {
-    identity: decodeTokenIdentity(authStore.get('token')),
+    identity:
+      tokenIdentityBaseline ?? decodeTokenIdentity(authStore.get('token')),
     tripped: false,
   };
   const admitToken = useCallback(
@@ -838,8 +854,10 @@ type IdentityGuard = { identity: string | null; tripped: boolean };
 
 /**
  * With `onTokenIdentityChange`, a document speaks for one identity (JWT `sub`
- * and `sessionId`) for its lifetime: the one it already holds when it mounts
- * (the SSR token), or, for a document with none, the first token it obtains.
+ * and `sessionId`) for its lifetime: `tokenIdentityBaseline` when given (a
+ * provider that remounts within one document), else the one it already holds
+ * when it mounts (the SSR token), or, for a document with none, the first
+ * token it obtains.
  * A token for another user or session is refused before it is cached, so no
  * consumer (Convex, the optimistic gate, HTTP headers) ever sees it. Refusing
  * trips the guard for good: the callback runs (reload the page there), the
