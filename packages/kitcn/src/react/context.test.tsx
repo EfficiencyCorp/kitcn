@@ -175,6 +175,54 @@ describe('createCRPCContext', () => {
     }
   });
 
+  test('http headers take their token from the guarded fetcher, not the cache', async () => {
+    const createHttpProxySpy = spyOn(
+      httpProxyModule,
+      'createHttpProxy'
+    ).mockReturnValue({} as any);
+    // The cache still holds a long-lived token the fetcher's guard refuses.
+    useAuthStoreSpy.mockImplementation(
+      () =>
+        ({
+          get: (key: string) =>
+            key === 'token'
+              ? 'cached-token'
+              : key === 'expiresAt'
+                ? Date.now() + 3_600_000
+                : null,
+        }) as any
+    );
+    let guarded: string | null = 'token-a';
+    const fetchAccessToken = mock(async () => guarded);
+    useFetchAccessTokenSpy.mockImplementation(() => fetchAccessToken as any);
+    const api = {
+      _http: { 'todos.get': { method: 'GET', path: '/todos/:id' } },
+    } as any;
+
+    try {
+      const { CRPCProvider, useCRPC } = createCRPCContext({
+        api,
+        convexSiteUrl: 'https://example.convex.site',
+      });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <CRPCProvider convexClient={{} as any} convexQueryClient={{} as any}>
+          {children}
+        </CRPCProvider>
+      );
+      renderHook(() => useCRPC(), { wrapper });
+      const headers = createHttpProxySpy.mock.calls[0]?.[0]
+        ?.headers as () => Promise<Record<string, string>>;
+
+      expect(await headers()).toEqual({ Authorization: 'Bearer token-a' });
+      // The guard tripped: nothing, not even the cached token, goes out.
+      guarded = null;
+      expect(await headers()).toEqual({});
+      expect(fetchAccessToken).toHaveBeenCalledTimes(2);
+    } finally {
+      createHttpProxySpy.mockRestore();
+    }
+  });
+
   test('forwards transformer option to CRPC proxies', () => {
     const createOptionsProxySpy = spyOn(
       proxyModule,

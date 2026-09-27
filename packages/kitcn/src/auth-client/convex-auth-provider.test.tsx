@@ -1312,6 +1312,289 @@ describe('ConvexAuthProvider', () => {
     expect(convexToken).toHaveBeenCalledTimes(0);
   });
 
+  describe('onTokenIdentityChange', () => {
+    const identityJwt = (sub: string, sessionId: string, expSeconds = 3600) => {
+      const payload = btoa(
+        JSON.stringify({
+          exp: Math.floor(Date.now() / 1000) + expSeconds,
+          sessionId,
+          sub,
+        })
+      );
+      return `x.${payload}.z`;
+    };
+
+    const guardHarness = ({
+      guard,
+      refreshed,
+    }: {
+      guard: boolean;
+      refreshed: string;
+    }) => {
+      let fetchToken:
+        | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
+        | null = null;
+      const close = mock(async () => {});
+      const client = {
+        setAuth: (fetcher: typeof fetchToken) => {
+          fetchToken = fetcher;
+        },
+        clearAuth: () => {},
+        close,
+      };
+      const authClient = {
+        useSession: () => ({ data: null, isPending: true }),
+        convex: { token: async () => ({ data: { token: refreshed } }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const onTokenIdentityChange = mock(() => {});
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ConvexAuthProvider
+          authClient={authClient as any}
+          client={client as any}
+          initialToken={identityJwt('user_a', 'session_a')}
+          onTokenIdentityChange={guard ? onTokenIdentityChange : undefined}
+        >
+          {children}
+        </ConvexAuthProvider>
+      );
+      renderHook(() => useAuth(), { wrapper });
+      return {
+        close,
+        onTokenIdentityChange,
+        fetch: (forceRefreshToken: boolean) => {
+          if (!fetchToken) throw new Error('setAuth was not called');
+          return fetchToken({ forceRefreshToken });
+        },
+      };
+    };
+
+    const flush = () =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+    test("the reviewer's sequence: SSR token A near expiry, the first fetch returns B", async () => {
+      let fetchToken:
+        | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
+        | null = null;
+      const close = mock(async () => {});
+      const client = {
+        setAuth: (fetcher: typeof fetchToken) => {
+          fetchToken = fetcher;
+        },
+        clearAuth: () => {},
+        close,
+      };
+      const tokenForB = identityJwt('user_b', 'session_b');
+      const authClient = {
+        // Better Auth already has a session: kitcn fetches instead of reusing A.
+        useSession: () => ({
+          data: { session: { id: 'session_a' }, user: { id: 'user_a' } },
+          isPending: false,
+        }),
+        convex: { token: async () => ({ data: { token: tokenForB } }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const onTokenIdentityChange = mock(() => {});
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ConvexAuthProvider
+          authClient={authClient as any}
+          client={client as any}
+          initialToken={identityJwt('user_a', 'session_a', 30)}
+          onTokenIdentityChange={onTokenIdentityChange}
+        >
+          {children}
+        </ConvexAuthProvider>
+      );
+      const { result } = renderHook(() => useAuthStore(), { wrapper });
+      await flush();
+      if (!fetchToken) throw new Error('setAuth was not called');
+
+      expect(await fetchToken({ forceRefreshToken: false })).toBeNull();
+      expect(onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+      // B never reached the cache, and nothing is handed out any more.
+      expect(result.current.get('token')).not.toBe(tokenForB);
+      expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
+    });
+
+    test('no SSR token: the first token a sign-in obtains sets the identity', async () => {
+      let fetchToken:
+        | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
+        | null = null;
+      const close = mock(async () => {});
+      const client = {
+        setAuth: (fetcher: typeof fetchToken) => {
+          fetchToken = fetcher;
+        },
+        clearAuth: () => {},
+        close,
+      };
+      const tokenForC = identityJwt('user_c', 'session_c');
+      const authClient = {
+        useSession: () => ({
+          data: { session: { id: 'session_c' }, user: { id: 'user_c' } },
+          isPending: false,
+        }),
+        convex: { token: async () => ({ data: { token: tokenForC } }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const onTokenIdentityChange = mock(() => {});
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ConvexAuthProvider
+          authClient={authClient as any}
+          client={client as any}
+          onTokenIdentityChange={onTokenIdentityChange}
+        >
+          {children}
+        </ConvexAuthProvider>
+      );
+      renderHook(() => useAuth(), { wrapper });
+      await flush();
+      if (!fetchToken) throw new Error('setAuth was not called');
+
+      expect(await fetchToken({ forceRefreshToken: false })).toBe(tokenForC);
+      expect(onTokenIdentityChange).toHaveBeenCalledTimes(0);
+      expect(close).toHaveBeenCalledTimes(0);
+    });
+
+    test('never hands Convex a token for another user or session', async () => {
+      const harness = guardHarness({
+        guard: true,
+        refreshed: identityJwt('user_b', 'session_b'),
+      });
+      await flush();
+
+      expect(await harness.fetch(false)).not.toBeNull();
+      expect(await harness.fetch(true)).toBeNull();
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(harness.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('passes a refreshed token for the same session through', async () => {
+      const refreshed = identityJwt('user_a', 'session_a', 7200);
+      const harness = guardHarness({ guard: true, refreshed });
+      await flush();
+
+      await harness.fetch(false);
+      expect(await harness.fetch(true)).toBe(refreshed);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+      expect(harness.close).toHaveBeenCalledTimes(0);
+    });
+
+    test('changes nothing without the option', async () => {
+      const refreshed = identityJwt('user_b', 'session_b');
+      const harness = guardHarness({ guard: false, refreshed });
+      await flush();
+
+      await harness.fetch(false);
+      expect(await harness.fetch(true)).toBe(refreshed);
+      expect(harness.close).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('optimisticAuth', () => {
+    const optimisticHarness = (
+      initialToken: string,
+      optimisticAuth: boolean
+    ) => {
+      let reportAuth: ((isAuthenticated: boolean) => void) | null = null;
+      const client = {
+        // Holds the confirmation until the test decides what the server says.
+        setAuth: (_fetchToken: unknown, onChange: (value: boolean) => void) => {
+          reportAuth = onChange;
+        },
+        clearAuth: () => {},
+      };
+      const authClient = {
+        useSession: () => ({ data: null, isPending: true }),
+        convex: { token: async () => ({ data: {} }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ConvexAuthProvider
+          authClient={authClient as any}
+          client={client as any}
+          initialToken={initialToken}
+          optimisticAuth={optimisticAuth}
+        >
+          {children}
+        </ConvexAuthProvider>
+      );
+      const hook = renderHook(
+        () => ({ auth: useAuth(), store: useAuthStore() }),
+        { wrapper }
+      );
+      return { ...hook, report: (value: boolean) => reportAuth?.(value) };
+    };
+
+    const flush = () =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+    test('opens the gate on a held, unexpired JWT before Convex confirms it', async () => {
+      const { result } = optimisticHarness(makeJwt(3600), true);
+      await flush();
+
+      expect(result.current.auth.isLoading).toBe(false);
+      expect(result.current.auth.isAuthenticated).toBe(true);
+    });
+
+    test('waits for the confirmation without the option', async () => {
+      const { result } = optimisticHarness(makeJwt(3600), false);
+      await flush();
+
+      expect(result.current.auth.isLoading).toBe(true);
+      expect(result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('keeps the gate closed for an expired JWT', async () => {
+      const { result } = optimisticHarness(makeJwt(-10), true);
+      await flush();
+
+      expect(result.current.auth.isLoading).toBe(true);
+      expect(result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('a refused token closes the gate and never reopens it', async () => {
+      const { result, report } = optimisticHarness(makeJwt(3600), true);
+      await flush();
+      expect(result.current.auth.isAuthenticated).toBe(true);
+
+      await act(async () => report(false));
+
+      expect(result.current.auth.isAuthenticated).toBe(false);
+      expect(result.current.auth.isLoading).toBe(true);
+
+      // The same token held again never counts as authenticated again.
+      await act(async () => {
+        result.current.store.set('isLoading', true);
+      });
+      await flush();
+      expect(result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('the confirmed state takes over once Convex confirms', async () => {
+      const { result, report } = optimisticHarness(makeJwt(3600), true);
+      await flush();
+
+      await act(async () => report(true));
+
+      expect(result.current.auth.isLoading).toBe(false);
+      expect(result.current.auth.isAuthenticated).toBe(true);
+    });
+  });
+
   test('useAuth reports unauthenticated when session is confirmed missing, even with SSR token', async () => {
     const initialToken = makeJwt(3600);
     const client = {

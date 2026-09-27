@@ -49,6 +49,7 @@ import { useFnMeta, useMeta } from './context';
 import type {
   ConvexActionOptions,
   ConvexInfiniteQueryOptions,
+  ConvexOptimisticUpdateOption,
   ConvexQueryOptions,
   InfiniteQueryOptsParam,
 } from './crpc-types';
@@ -384,7 +385,8 @@ export function useConvexMutationOptions<
       FunctionArgs<Mutation>
     >,
     ReservedMutationOptions
-  >,
+  > &
+    ConvexOptimisticUpdateOption<FunctionArgs<Mutation>>,
   transformer?: DataTransformerOptions
 ): UseMutationOptions<
   FunctionReturnType<Mutation>,
@@ -396,11 +398,17 @@ export function useConvexMutationOptions<
   const name = getFunctionName(mutation);
   const [namespace, fnName] = name.split(':');
   const authType = getMeta(namespace, fnName)?.auth as AuthType;
-  const convexMutation = useConvexMutationBase(mutation);
+  const { optimisticUpdate, ...mutationOptions } = options ?? {};
+  const reactMutation = useConvexMutationBase(mutation);
+  // Convex-native optimistic update: it edits Convex's local query store,
+  // which ConvexQueryClient reads, so Convex's own rollback applies.
+  const convexMutation = optimisticUpdate
+    ? reactMutation.withOptimisticUpdate(optimisticUpdate)
+    : reactMutation;
   const resolvedTransformer = getTransformer(transformer);
 
   return {
-    ...options, // Spread user options FIRST
+    ...mutationOptions, // Spread user options FIRST
     mutationFn: async (args) => {
       // Only guard if auth is required
       if (authType === 'required' && guard()) {

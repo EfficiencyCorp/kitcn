@@ -87,6 +87,25 @@ export type ConvexAuthProviderProps = {
   onQueryUnauthorized?: (info: { queryName: string }) => void;
   /** Custom function to detect UNAUTHORIZED errors. Default checks code property. */
   isUnauthorized?: (error: unknown) => boolean;
+  /**
+   * Run auth-bound queries as soon as an unexpired JWT is held instead of
+   * after Convex confirms it. Convex sends them after Authenticate on the same
+   * socket and evaluates none of them if the token is refused; a refused token
+   * sets `isAuthenticated` back to false, which resets auth-bound queries, and
+   * never opens the gate again. Default `false`.
+   */
+  optimisticAuth?: boolean;
+  /**
+   * Fix the identity (JWT `sub` and `sessionId`) the document speaks for: the
+   * one it holds when it mounts (`initialToken`), or, with none, the first
+   * token it obtains. A token for another user or session is refused before
+   * it is cached, so neither Convex, the optimistic gate nor HTTP headers ever
+   * see it: the Convex client is closed (dropping queued requests and
+   * optimistic updates), every later token request answers null, and this is
+   * called, typically to reload the page. Same-session refreshes pass
+   * through. Off when not set.
+   */
+  onTokenIdentityChange?: () => void;
 };
 
 const defaultMutationHandler = () => {
@@ -319,6 +338,8 @@ export function ConvexAuthProvider({
   onMutationUnauthorized,
   onQueryUnauthorized,
   isUnauthorized,
+  optimisticAuth = false,
+  onTokenIdentityChange,
 }: ConvexAuthProviderProps) {
   // Handle cross-domain one-time token
   useOTTHandler(authClient);
@@ -345,6 +366,8 @@ export function ConvexAuthProvider({
         authClient={authClient}
         client={client}
         convexQueryClient={convexQueryClient}
+        onTokenIdentityChange={onTokenIdentityChange}
+        optimisticAuth={optimisticAuth}
       >
         {children}
       </ConvexAuthProviderInner>
@@ -361,11 +384,15 @@ function ConvexAuthProviderInner({
   client,
   authClient,
   convexQueryClient,
+  optimisticAuth,
+  onTokenIdentityChange,
 }: {
   children: ReactNode;
   client: ConvexReactClient;
   authClient: ConvexAuthProviderClient;
   convexQueryClient?: ConvexAuthProviderQueryClient;
+  optimisticAuth: boolean;
+  onTokenIdentityChange?: () => void;
 }) {
   const authStore = useAuthStore();
   convexQueryClient?.updateAuthStore(authStore);
@@ -504,6 +531,26 @@ function ConvexAuthProviderInner({
       .catch(() => {});
   }, [session, isPending, authStore, authClient]);
 
+  // The identity guard (`onTokenIdentityChange`): seeded from the token the
+  // document already holds when it mounts (the SSR token).
+  const onTokenIdentityChangeRef = useRef(onTokenIdentityChange);
+  onTokenIdentityChangeRef.current = onTokenIdentityChange;
+  const identityGuardRef = useRef<IdentityGuard | null>(null);
+  identityGuardRef.current ??= {
+    identity: decodeTokenIdentity(authStore.get('token')),
+    tripped: false,
+  };
+  const admitToken = useCallback(
+    (token: string) =>
+      admitTokenIdentity({
+        client,
+        guard: identityGuardRef.current!,
+        onIdentityChange: onTokenIdentityChangeRef.current,
+        token,
+      }),
+    [client]
+  );
+
   // Stable fetchAccessToken - only recreated when authStore/authClient change (rare)
   // Reads session/isPending from refs to avoid dependency on changing objects
   const fetchAccessToken = useCallback(
@@ -539,6 +586,8 @@ function ConvexAuthProviderInner({
           .token({ fetchOptions })
           .then((result: { data?: { token?: string | null } | null }) => {
             const jwt = result.data?.token || null;
+            // A token for another identity is refused before it is cached.
+            if (jwt && !admitToken(jwt)) return null;
 
             if (jwt) {
               const exp = decodeJwtExp(jwt);
@@ -667,7 +716,20 @@ function ConvexAuthProviderInner({
     },
     // Stable deps - authStore/authClient rarely change
     // session/isPending accessed via refs to prevent callback recreation
-    [authStore, authClient, getCachedJwt]
+    [authStore, authClient, getCachedJwt, admitToken]
+  );
+
+  // Every token consumer (Convex, HTTP headers) goes through this: once the
+  // guard has tripped it answers null, and it never hands out a token the
+  // guard refused.
+  const guardedFetchAccessToken = useCallback(
+    async (args: { forceRefreshToken?: boolean } = {}) => {
+      if (identityGuardRef.current?.tripped) return null;
+      const token = await fetchAccessToken(args);
+      if (!token || !admitToken(token)) return null;
+      return token;
+    },
+    [fetchAccessToken, admitToken]
   );
 
   // Create useAuth hook for ConvexProviderWithAuth
@@ -682,19 +744,21 @@ function ConvexAuthProviderInner({
         isLoading: isPendingRef.current && !token,
         // If Better Auth confirms no session, stale JWT should not keep auth=true.
         isAuthenticated: sessionMissing ? false : hasSession || token !== null,
-        fetchAccessToken,
+        fetchAccessToken: guardedFetchAccessToken,
       };
     },
-    [fetchAccessToken, authStore]
+    [guardedFetchAccessToken, authStore]
   );
 
   return (
-    <FetchAccessTokenContext.Provider value={fetchAccessToken}>
+    <FetchAccessTokenContext.Provider value={guardedFetchAccessToken}>
       <ConvexProviderWithAuth
         client={client as IConvexReactClient}
         useAuth={useAuth}
       >
-        <AuthStateSync>{children}</AuthStateSync>
+        <AuthStateSync optimisticAuth={optimisticAuth}>
+          {children}
+        </AuthStateSync>
       </ConvexProviderWithAuth>
     </FetchAccessTokenContext.Provider>
   );
@@ -712,22 +776,159 @@ function ConvexAuthProviderInner({
  * 5. Without defensive check, we'd sync { isLoading: false, isAuthenticated: false }
  * 6. Queries would throw UNAUTHORIZED before token is validated
  */
-function AuthStateSync({ children }: { children: ReactNode }) {
+function AuthStateSync({
+  children,
+  optimisticAuth = false,
+}: {
+  children: ReactNode;
+  optimisticAuth?: boolean;
+}) {
   const { isLoading: convexIsLoading, isAuthenticated } = useConvexAuth();
   const authStore = useAuthStore();
   const token = useAuthValue('token');
+  // The token Convex refused last: it never opens the optimistic gate again.
+  const rejectedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // DEFENSIVE: If we have a token but Convex says not authenticated,
-    // stay in loading state to avoid UNAUTHORIZED errors during hydration
-    const hasTokenButNotAuth = !!token && !isAuthenticated;
-    const isLoading = convexIsLoading || hasTokenButNotAuth;
+    const gate = resolveAuthGate({
+      convexIsLoading,
+      isAuthenticated,
+      optimisticAuth,
+      rejectedToken: rejectedTokenRef.current,
+      token,
+    });
+    if (
+      optimisticAuth &&
+      isTokenRejectedByConvex({ convexIsLoading, isAuthenticated, token })
+    ) {
+      rejectedTokenRef.current = token;
+    }
 
-    authStore.set('isLoading', isLoading);
-    authStore.set('isAuthenticated', isAuthenticated);
-  }, [convexIsLoading, isAuthenticated, token, authStore]);
+    authStore.set('isLoading', gate.isLoading);
+    authStore.set('isAuthenticated', gate.isAuthenticated);
+  }, [convexIsLoading, isAuthenticated, optimisticAuth, token, authStore]);
 
   return children;
+}
+
+/**
+ * The user and session a Better Auth Convex JWT speaks for (`sub` and
+ * `sessionId`), or null. Other claims (name, email, updatedAt) may change
+ * within one session and do not count.
+ */
+function decodeTokenIdentity(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const segment = token.split('.')[1];
+    if (!segment) return null;
+    const payload: unknown = JSON.parse(
+      atob(segment.replaceAll('-', '+').replaceAll('_', '/'))
+    );
+    if (typeof payload !== 'object' || payload === null) return null;
+    const sub = 'sub' in payload ? payload.sub : null;
+    const sessionId = 'sessionId' in payload ? payload.sessionId : null;
+    if (typeof sub !== 'string') return null;
+    return `${sub}|${typeof sessionId === 'string' ? sessionId : ''}`;
+  } catch {
+    return null;
+  }
+}
+
+type IdentityGuard = { identity: string | null; tripped: boolean };
+
+/**
+ * With `onTokenIdentityChange`, a document speaks for one identity (JWT `sub`
+ * and `sessionId`) for its lifetime: the one it already holds when it mounts
+ * (the SSR token), or, for a document with none, the first token it obtains.
+ * A token for another user or session is refused before it is cached, so no
+ * consumer (Convex, the optimistic gate, HTTP headers) ever sees it. Refusing
+ * trips the guard for good: the callback runs (reload the page there), the
+ * Convex client is closed, which drops the requests it had queued and their
+ * optimistic updates, and every later token request answers null.
+ */
+function admitTokenIdentity({
+  client,
+  guard,
+  onIdentityChange,
+  token,
+}: {
+  client: ConvexReactClient;
+  guard: IdentityGuard;
+  onIdentityChange: (() => void) | undefined;
+  token: string;
+}): boolean {
+  if (!onIdentityChange) return true;
+  if (guard.tripped) return false;
+  const identity = decodeTokenIdentity(token);
+  if (identity === null) return true;
+  if (guard.identity === null) {
+    guard.identity = identity;
+    return true;
+  }
+  if (guard.identity === identity) return true;
+  guard.tripped = true;
+  onIdentityChange();
+  void client.close();
+  return false;
+}
+
+type AuthGateInput = {
+  convexIsLoading: boolean;
+  isAuthenticated: boolean;
+  optimisticAuth: boolean;
+  rejectedToken: string | null;
+  token: string | null;
+};
+
+/**
+ * Convex has settled on "not authenticated" while a token is still held: the
+ * server refused it (or refused its refresh).
+ */
+function isTokenRejectedByConvex({
+  convexIsLoading,
+  isAuthenticated,
+  token,
+}: Pick<AuthGateInput, 'convexIsLoading' | 'isAuthenticated' | 'token'>) {
+  return !!token && !convexIsLoading && !isAuthenticated;
+}
+
+/**
+ * The auth state published to the store, which is what every query gate reads.
+ *
+ * Without `optimisticAuth` this is the confirmed state: queries wait until
+ * Convex has confirmed the token. With it, a held, unexpired JWT that Convex
+ * has not refused yet counts as authenticated while Convex confirms it, so
+ * auth-bound queries subscribe at once; Convex sends them after Authenticate on
+ * the same socket, and a refused token closes the socket before any of them is
+ * evaluated. When Convex refuses the token, `isAuthenticated` falls back to
+ * false, which resets auth-bound queries (see `CRPCProviderInner`).
+ */
+function resolveAuthGate({
+  convexIsLoading,
+  isAuthenticated,
+  optimisticAuth,
+  rejectedToken,
+  token,
+}: AuthGateInput): { isAuthenticated: boolean; isLoading: boolean } {
+  if (
+    optimisticAuth &&
+    convexIsLoading &&
+    isOptimisticToken(token, rejectedToken)
+  ) {
+    return { isAuthenticated: true, isLoading: false };
+  }
+  // DEFENSIVE: If we have a token but Convex says not authenticated,
+  // stay in loading state to avoid UNAUTHORIZED errors during hydration
+  return {
+    isAuthenticated,
+    isLoading: convexIsLoading || (!!token && !isAuthenticated),
+  };
+}
+
+function isOptimisticToken(token: string | null, rejectedToken: string | null) {
+  if (!token || token === rejectedToken) return false;
+  const expiresAt = decodeJwtExp(token);
+  return expiresAt !== null && expiresAt > Date.now();
 }
 
 /**

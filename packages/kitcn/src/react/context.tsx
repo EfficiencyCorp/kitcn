@@ -238,6 +238,24 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
         convexSiteUrl: httpOptions.convexSiteUrl,
         routes: meta._http,
         headers: async () => {
+          // Through the same token fetcher Convex uses, so its guards (the
+          // identity guard) apply to HTTP requests too.
+          if (fetchAccessToken) {
+            const expiresAt = authStore.get('expiresAt');
+            // eslint-disable-next-line react-hooks/purity -- called in async callback, not during render
+            const timeRemaining = expiresAt ? expiresAt - Date.now() : 0;
+            const guardedToken = await fetchAccessToken({
+              forceRefreshToken: !!expiresAt && timeRemaining < 60_000,
+            });
+            const userHeaders =
+              typeof httpOptions.headers === 'function'
+                ? await httpOptions.headers()
+                : httpOptions.headers;
+            return guardedToken
+              ? { ...userHeaders, Authorization: `Bearer ${guardedToken}` }
+              : { ...userHeaders };
+          }
+
           // Use authStore.get() for non-reactive access
           const token = authStore.get('token');
           const expiresAt = authStore.get('expiresAt');
@@ -253,20 +271,6 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
                 ? await httpOptions.headers()
                 : httpOptions.headers;
             return { ...userHeaders, Authorization: `Bearer ${token}` };
-          }
-
-          // Use fetchAccessToken from context (available immediately, no race condition)
-          if (fetchAccessToken) {
-            const newToken = await fetchAccessToken({
-              forceRefreshToken: !!expiresAt,
-            });
-            if (newToken) {
-              const userHeaders =
-                typeof httpOptions.headers === 'function'
-                  ? await httpOptions.headers()
-                  : httpOptions.headers;
-              return { ...userHeaders, Authorization: `Bearer ${newToken}` };
-            }
           }
 
           // No auth - return user headers only
