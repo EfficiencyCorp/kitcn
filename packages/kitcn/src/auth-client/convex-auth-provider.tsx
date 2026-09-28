@@ -112,10 +112,26 @@ export type ConvexAuthProviderProps = {
    * mounts the provider more than once in one document (for example one per
    * route group, over a shared Convex client). The guard starts from it
    * instead of from `initialToken` or the first token obtained, so a remount
-   * without a token still refuses another user's or session's token. Read on
-   * the first render only. Needs `onTokenIdentityChange`.
+   * without a token still refuses another user's or session's token.
+   *
+   * A fixed value is read on the first render only. A getter is read at
+   * every admission, cached tokens included, and a token must match both the
+   * identity it returns and the one this guard already admitted; any
+   * mismatch trips the guard. So a provider kept mounted but hidden (React
+   * `<Activity>`) cannot resume under an identity the document has since
+   * moved away from. A getter returning null does not constrain. Needs
+   * `onTokenIdentityChange`.
    */
-  tokenIdentityBaseline?: string | null;
+  tokenIdentityBaseline?: string | null | (() => string | null);
+  /**
+   * Called synchronously with every token the identity guard admits as it is
+   * handed to Convex or HTTP headers, cached tokens included, so the document
+   * can claim the identity at that moment (for example the first token a
+   * document without one obtains). Never called for a refused token. Read
+   * from a ref, so passing a new function does not re-run effects. Needs
+   * `onTokenIdentityChange`.
+   */
+  onTokenIdentityAdmitted?: (token: string) => void;
 };
 
 const defaultMutationHandler = () => {
@@ -350,6 +366,7 @@ export function ConvexAuthProvider({
   isUnauthorized,
   optimisticAuth = false,
   onTokenIdentityChange,
+  onTokenIdentityAdmitted,
   tokenIdentityBaseline,
 }: ConvexAuthProviderProps) {
   // Handle cross-domain one-time token
@@ -377,6 +394,7 @@ export function ConvexAuthProvider({
         authClient={authClient}
         client={client}
         convexQueryClient={convexQueryClient}
+        onTokenIdentityAdmitted={onTokenIdentityAdmitted}
         onTokenIdentityChange={onTokenIdentityChange}
         optimisticAuth={optimisticAuth}
         tokenIdentityBaseline={tokenIdentityBaseline}
@@ -398,6 +416,7 @@ function ConvexAuthProviderInner({
   convexQueryClient,
   optimisticAuth,
   onTokenIdentityChange,
+  onTokenIdentityAdmitted,
   tokenIdentityBaseline,
 }: {
   children: ReactNode;
@@ -406,7 +425,8 @@ function ConvexAuthProviderInner({
   convexQueryClient?: ConvexAuthProviderQueryClient;
   optimisticAuth: boolean;
   onTokenIdentityChange?: () => void;
-  tokenIdentityBaseline?: string | null;
+  onTokenIdentityAdmitted?: (token: string) => void;
+  tokenIdentityBaseline?: ConvexAuthProviderProps['tokenIdentityBaseline'];
 }) {
   const authStore = useAuthStore();
   convexQueryClient?.updateAuthStore(authStore);
@@ -547,20 +567,34 @@ function ConvexAuthProviderInner({
 
   // The identity guard (`onTokenIdentityChange`): seeded from the baseline
   // the app hands a remount, else from the token the document already holds
-  // when it mounts (the SSR token).
+  // when it mounts (the SSR token). A getter baseline is re-read at every
+  // admission through a ref, so it always sees the latest prop.
   const onTokenIdentityChangeRef = useRef(onTokenIdentityChange);
   onTokenIdentityChangeRef.current = onTokenIdentityChange;
+  const onTokenIdentityAdmittedRef = useRef(onTokenIdentityAdmitted);
+  onTokenIdentityAdmittedRef.current = onTokenIdentityAdmitted;
+  const tokenIdentityBaselineRef = useRef(tokenIdentityBaseline);
+  tokenIdentityBaselineRef.current = tokenIdentityBaseline;
   const identityGuardRef = useRef<IdentityGuard | null>(null);
   identityGuardRef.current ??= {
     identity:
-      tokenIdentityBaseline ?? decodeTokenIdentity(authStore.get('token')),
+      resolveIdentityBaseline(tokenIdentityBaseline) ??
+      decodeTokenIdentity(authStore.get('token')),
+    baseline:
+      typeof tokenIdentityBaseline === 'function'
+        ? () => resolveIdentityBaseline(tokenIdentityBaselineRef.current)
+        : null,
     tripped: false,
   };
+  // `announce`: false for the check a fresh token passes before it is cached;
+  // the hand-out (guardedFetchAccessToken) checks it again and announces it,
+  // so `onTokenIdentityAdmitted` hears each token handed out exactly once.
   const admitToken = useCallback(
-    (token: string) =>
+    (token: string, announce: boolean) =>
       admitTokenIdentity({
         client,
         guard: identityGuardRef.current!,
+        onAdmitted: announce ? onTokenIdentityAdmittedRef.current : undefined,
         onIdentityChange: onTokenIdentityChangeRef.current,
         token,
       }),
@@ -603,7 +637,7 @@ function ConvexAuthProviderInner({
           .then((result: { data?: { token?: string | null } | null }) => {
             const jwt = result.data?.token || null;
             // A token for another identity is refused before it is cached.
-            if (jwt && !admitToken(jwt)) return null;
+            if (jwt && !admitToken(jwt, false)) return null;
 
             if (jwt) {
               const exp = decodeJwtExp(jwt);
@@ -742,7 +776,7 @@ function ConvexAuthProviderInner({
     async (args: { forceRefreshToken?: boolean } = {}) => {
       if (identityGuardRef.current?.tripped) return null;
       const token = await fetchAccessToken(args);
-      if (!token || !admitToken(token)) return null;
+      if (!token || !admitToken(token, true)) return null;
       return token;
     },
     [fetchAccessToken, admitToken]
@@ -850,14 +884,34 @@ function decodeTokenIdentity(token: string | null): string | null {
   }
 }
 
-type IdentityGuard = { identity: string | null; tripped: boolean };
+type IdentityGuard = {
+  identity: string | null;
+  /** The document's current identity, when the baseline is a getter. */
+  baseline: (() => string | null) | null;
+  tripped: boolean;
+};
+
+/**
+ * `tokenIdentityBaseline` as given: a fixed identity, or a getter for the
+ * document's current one.
+ */
+function resolveIdentityBaseline(
+  baseline: string | null | (() => string | null) | undefined
+): string | null {
+  return typeof baseline === 'function' ? baseline() : (baseline ?? null);
+}
 
 /**
  * With `onTokenIdentityChange`, a document speaks for one identity (JWT `sub`
  * and `sessionId`) for its lifetime: `tokenIdentityBaseline` when given (a
  * provider that remounts within one document), else the one it already holds
  * when it mounts (the SSR token), or, for a document with none, the first
- * token it obtains.
+ * token it obtains. Given as a getter, the document's current identity is
+ * read at every admission, cached tokens included: a token must match both
+ * it and the identity this guard already admitted, so a provider kept
+ * mounted but hidden (React `<Activity>`) cannot resume under an identity the
+ * document has since moved away from. `onAdmitted` hears an admitted token,
+ * so the document can claim the identity at that moment.
  * A token for another user or session is refused before it is cached, so no
  * consumer (Convex, the optimistic gate, HTTP headers) ever sees it. Refusing
  * trips the guard for good: the callback runs (reload the page there), the
@@ -867,11 +921,13 @@ type IdentityGuard = { identity: string | null; tripped: boolean };
 function admitTokenIdentity({
   client,
   guard,
+  onAdmitted,
   onIdentityChange,
   token,
 }: {
   client: ConvexReactClient;
   guard: IdentityGuard;
+  onAdmitted: ((token: string) => void) | undefined;
   onIdentityChange: (() => void) | undefined;
   token: string;
 }): boolean {
@@ -879,11 +935,14 @@ function admitTokenIdentity({
   if (guard.tripped) return false;
   const identity = decodeTokenIdentity(token);
   if (identity === null) return true;
-  if (guard.identity === null) {
+  const current = guard.baseline ? guard.baseline() : null;
+  const matchesGuard = guard.identity === null || guard.identity === identity;
+  const matchesDocument = current === null || current === identity;
+  if (matchesGuard && matchesDocument) {
     guard.identity = identity;
+    onAdmitted?.(token);
     return true;
   }
-  if (guard.identity === identity) return true;
   guard.tripped = true;
   onIdentityChange();
   void client.close();

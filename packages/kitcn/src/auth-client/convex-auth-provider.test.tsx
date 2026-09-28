@@ -1582,6 +1582,218 @@ describe('ConvexAuthProvider', () => {
       });
     });
 
+    describe('tokenIdentityBaseline getter and onTokenIdentityAdmitted', () => {
+      /**
+       * A mount with a Better Auth session and no token of its own; each
+       * fresh fetch returns the next of `obtained`. `document.identity` is
+       * what the baseline getter answers, read whenever the guard asks.
+       */
+      const documentHarness = ({
+        getter = true,
+        guard = true,
+        identity,
+        obtained,
+      }: {
+        getter?: boolean;
+        guard?: boolean;
+        identity: string | null;
+        obtained: string[];
+      }) => {
+        let fetchToken:
+          | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
+          | null = null;
+        const setAuth = mock((fetcher: typeof fetchToken) => {
+          fetchToken = fetcher;
+        });
+        const close = mock(async () => {});
+        const client = { setAuth, clearAuth: () => {}, close };
+        const queue = [...obtained];
+        const convexToken = mock(async () => ({
+          data: { token: queue.shift() ?? null },
+        }));
+        const authClient = {
+          useSession: () => ({
+            data: { session: { id: 'session' }, user: { id: 'user' } },
+            isPending: false,
+          }),
+          convex: { token: convexToken },
+          getSession: async () => null,
+          updateSession: () => {},
+          crossDomain: {
+            oneTimeToken: { verify: async () => ({ data: {} }) },
+          },
+        };
+        const document = { identity };
+        const readBaseline = mock(() => document.identity);
+        const onTokenIdentityChange = mock(() => {});
+        const onTokenIdentityAdmitted = mock((_token: string) => {});
+        const Provider = ({
+          children,
+          onAdmitted,
+        }: {
+          children: ReactNode;
+          onAdmitted: (token: string) => void;
+        }) => (
+          <ConvexAuthProvider
+            authClient={authClient as any}
+            client={client as any}
+            onTokenIdentityAdmitted={onAdmitted}
+            onTokenIdentityChange={guard ? onTokenIdentityChange : undefined}
+            tokenIdentityBaseline={getter ? readBaseline : identity}
+          >
+            {children}
+          </ConvexAuthProvider>
+        );
+        let onAdmitted: (token: string) => void = onTokenIdentityAdmitted;
+        const view = renderHook(() => useAuth(), {
+          wrapper: ({ children }: { children: ReactNode }) => (
+            <Provider onAdmitted={onAdmitted}>{children}</Provider>
+          ),
+        });
+        return {
+          close,
+          convexToken,
+          document,
+          onTokenIdentityAdmitted,
+          onTokenIdentityChange,
+          readBaseline,
+          setAuth,
+          fetch: (forceRefreshToken: boolean) => {
+            if (!fetchToken) throw new Error('setAuth was not called');
+            return fetchToken({ forceRefreshToken });
+          },
+          replaceOnAdmitted: (next: (token: string) => void) => {
+            onAdmitted = next;
+            view.rerender();
+          },
+        };
+      };
+
+      test('the getter is read at admission, not at mount: a remount refuses a token of another identity', async () => {
+        // The document speaks for no one when this provider mounts, then
+        // another mount establishes A before this one's first token arrives.
+        const harness = documentHarness({
+          identity: null,
+          obtained: [identityJwt('user_b', 'session_b')],
+        });
+        await flush();
+        harness.document.identity = 'user_a|session_a';
+
+        expect(await harness.fetch(false)).toBeNull();
+        expect(harness.readBaseline).toHaveBeenCalled();
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.close).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(0);
+        expect(await harness.fetch(true)).toBeNull();
+      });
+
+      test('a cached token is refused once the document moved to another identity', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const harness = documentHarness({
+          identity: 'user_a|session_a',
+          obtained: [tokenForA],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        // Kept mounted but hidden while the document moved on to B.
+        harness.document.identity = 'user_b|session_b';
+
+        expect(await harness.fetch(false)).toBeNull();
+        // The refused token was the cached one: no second fetch happened.
+        expect(harness.convexToken).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.close).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(1);
+      });
+
+      test('a getter answering null does not constrain; the guard keeps the identity it admitted', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const harness = documentHarness({
+          identity: null,
+          obtained: [tokenForA, identityJwt('user_b', 'session_b')],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        expect(await harness.fetch(true)).toBeNull();
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityAdmitted.mock.calls).toEqual([
+          [tokenForA],
+        ]);
+      });
+
+      test('onTokenIdentityAdmitted hears every admitted token once, cached ones included', async () => {
+        const first = identityJwt('user_a', 'session_a');
+        const refreshed = identityJwt('user_a', 'session_a', 7200);
+        const harness = documentHarness({
+          identity: 'user_a|session_a',
+          obtained: [first, refreshed],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(first);
+        expect(await harness.fetch(false)).toBe(first);
+        expect(await harness.fetch(true)).toBe(refreshed);
+        expect(harness.convexToken).toHaveBeenCalledTimes(2);
+        expect(harness.onTokenIdentityAdmitted.mock.calls).toEqual([
+          [first],
+          [first],
+          [refreshed],
+        ]);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+      });
+
+      test('onTokenIdentityAdmitted is never called for a refused token, nor after the guard tripped', async () => {
+        const harness = documentHarness({
+          getter: false,
+          identity: 'user_a|session_a',
+          obtained: [
+            identityJwt('user_b', 'session_b'),
+            identityJwt('user_a', 'session_a'),
+          ],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBeNull();
+        expect(await harness.fetch(true)).toBeNull();
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(0);
+      });
+
+      test('a new onTokenIdentityAdmitted is used without handing Convex a new fetcher', async () => {
+        const token = identityJwt('user_a', 'session_a');
+        const harness = documentHarness({
+          identity: 'user_a|session_a',
+          obtained: [token],
+        });
+        await flush();
+        const setAuthCalls = harness.setAuth.mock.calls.length;
+        const next = mock((_token: string) => {});
+        harness.replaceOnAdmitted(next);
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(token);
+        expect(harness.setAuth).toHaveBeenCalledTimes(setAuthCalls);
+        expect(next.mock.calls).toEqual([[token]]);
+        expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(0);
+      });
+
+      test('onTokenIdentityAdmitted needs onTokenIdentityChange', async () => {
+        const token = identityJwt('user_b', 'session_b');
+        const harness = documentHarness({
+          guard: false,
+          identity: 'user_a|session_a',
+          obtained: [token],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(token);
+        expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(0);
+        expect(harness.close).toHaveBeenCalledTimes(0);
+      });
+    });
+
     test('changes nothing without the option', async () => {
       const refreshed = identityJwt('user_b', 'session_b');
       const harness = guardHarness({ guard: false, refreshed });
