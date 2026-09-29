@@ -2132,7 +2132,7 @@ describe('ConvexAuthProvider', () => {
       expect(harness.result.current.auth.isAuthenticated).toBe(true);
     });
 
-    test('a persisted session token is not restored while an identity is established', async () => {
+    test('an opaque persisted session token is not restored while an identity is established', async () => {
       writeAuthSessionFallbackToken('opaque-session-token');
       const harness = convexHarness({
         baseline: 'user_a|session_a',
@@ -2141,6 +2141,39 @@ describe('ConvexAuthProvider', () => {
       await flush();
 
       expect(harness.getSession).toHaveBeenCalledTimes(0);
+      expect(harness.$fetch).toHaveBeenCalledTimes(0);
+      expect(harness.result.current.store.get('token')).toBeNull();
+    });
+
+    test('a persisted JWT of the established identity is restored', async () => {
+      const tokenForA = identityJwt('user_a', 'session_a');
+      writeAuthSessionFallbackToken(tokenForA);
+      const harness = convexHarness({
+        baseline: 'user_a|session_a',
+        persistedSessionAnswer: {
+          data: { session: { id: 'session_a' }, user: { id: 'user_a' } },
+          error: null,
+        },
+        session: 'none',
+      });
+      await flush();
+
+      expect(harness.$fetch).toHaveBeenCalledTimes(1);
+      expect(harness.$fetch.mock.calls[0]![1]).toMatchObject({
+        headers: { Authorization: `Bearer ${tokenForA}` },
+      });
+      expect(harness.result.current.store.get('token')).toBe(tokenForA);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+    });
+
+    test('a persisted JWT of another identity is not restored', async () => {
+      writeAuthSessionFallbackToken(identityJwt('user_b', 'session_b'));
+      const harness = convexHarness({
+        baseline: 'user_a|session_a',
+        session: 'none',
+      });
+      await flush();
+
       expect(harness.$fetch).toHaveBeenCalledTimes(0);
       expect(harness.result.current.store.get('token')).toBeNull();
     });

@@ -624,14 +624,23 @@ function ConvexAuthProviderInner({
     if (hasActiveSessionData(session) || isPending || authStore.get('token')) {
       return;
     }
-    // A persisted session token proves no identity before it is used. While
-    // the guard holds an identity (or has tripped), it is not restored.
-    if (onTokenIdentityChangeRef.current) {
-      const guard = identityGuardRef.current!;
-      if (guard.tripped || guardHasIdentity(guard)) return;
-    }
-
     const persistedToken = readAuthSessionFallbackToken();
+    // With the identity guard, a persisted credential is restored only if it
+    // proves the identity already established: a JWT for the same user and
+    // session. An opaque session token proves nothing before it is used, so
+    // it is not restored while an identity is established. Nothing is
+    // restored after a trip.
+    if (onTokenIdentityChangeRef.current && persistedToken) {
+      const guard = identityGuardRef.current!;
+      if (guard.tripped) return;
+      if (
+        guardHasIdentity(guard) &&
+        (decodeJwtExp(persistedToken) === null ||
+          !judgeTokenIdentity(guard, persistedToken))
+      ) {
+        return;
+      }
+    }
     if (
       !persistedToken ||
       // The restore owns the optimistic state until it resolves. Re-entering on
