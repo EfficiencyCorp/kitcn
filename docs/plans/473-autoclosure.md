@@ -270,6 +270,18 @@ Verification evidence:
 - The full Bun suite inside `bun check` passed with 1,473 tests after the fix.
 - `bun check` remains red only in `fixtures:check`. Expo's live SDK 55 template changed generated `AGENTS.md` and removed `CLAUDE.md`. The immutable PR diff contains no fixture, CLI registry, or tooling change.
 
+Feedback ledger:
+| URL | Source | Priority | Claim | Verdict | Rationale / proof | Reply | Resolution |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| https://github.com/udecode/kitcn/pull/473#issuecomment-5857551022 | top-level bot comment | P3 | Fork contributor needs Vercel team authorization | non-actionable | Vercel is not the active ruleset's required `CI` context; no deploy bypass is in scope | N/A | informational |
+| https://github.com/udecode/kitcn/pull/473#issuecomment-5857551032 | top-level bot comment | P3 | Changeset releases `kitcn` and `@kitcn/resend` | non-actionable | `.changeset/config.json` fixes `kitcn` and `@kitcn/*` together; the single PR changeset correctly targets `kitcn` | N/A | informational |
+
+Feedback inventory receipt:
+- Helper: 0 unresolved review threads, 1 non-noise PR comment, 0 review bodies.
+- Raw REST: 2 top-level comments, 0 reviews, 0 inline comments.
+- Raw GraphQL: 0 review threads, including resolved and outdated.
+- Actionable P0/P1/P2/P3: 0/0/0/0. Informational P3 bot items: 2.
+
 Timeline:
 - 2026-09-29T22:35:42.520Z Autoclosure plan created.
 - 2026-09-30T00:39:00+02:00 `bun check` passed lint and package typechecks but

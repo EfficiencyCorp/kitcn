@@ -157,8 +157,6 @@ describe('ConvexQueryClient (server mode)', () => {
         queryKey: ['convexQuery', name, {}],
       }) as unknown as QueryFunctionContext<readonly unknown[]>;
 
-    // What a Start app hands kitcn: a real client's logger; setAuth and
-    // clearAuth stubbed (the real ones open a socket).
     const startConvexClient = () => {
       const convex = new ConvexReactClient(
         'https://happy-otter-123.convex.cloud'

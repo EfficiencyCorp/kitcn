@@ -344,7 +344,13 @@ Implementation notes:
 - None yet.
 
 Review fixes:
-- None yet.
+- Close the Convex client before invoking `onTokenIdentityChange`, so a
+  throwing consumer callback cannot leave queued work alive after the guard
+  trips. A focused red test observed zero `close()` calls before the reorder.
+- Replace the new source-level `any` constraint with Convex `Value` and add
+  compile-time coverage for public `optimisticUpdate` and provider props.
+- Document the public auth and optimistic-mutation options in `www` and the
+  compressed published kitcn skill mirrors.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |

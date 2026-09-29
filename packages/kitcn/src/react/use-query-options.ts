@@ -400,8 +400,6 @@ export function useConvexMutationOptions<
   const authType = getMeta(namespace, fnName)?.auth as AuthType;
   const { optimisticUpdate, ...mutationOptions } = options ?? {};
   const reactMutation = useConvexMutationBase(mutation);
-  // Convex-native optimistic update: it edits Convex's local query store,
-  // which ConvexQueryClient reads, so Convex's own rollback applies.
   const convexMutation = optimisticUpdate
     ? reactMutation.withOptimisticUpdate(optimisticUpdate)
     : reactMutation;

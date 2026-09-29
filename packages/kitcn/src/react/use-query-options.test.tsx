@@ -454,7 +454,6 @@ describe('use-query-options', () => {
     expect(withOptimisticUpdate).toHaveBeenCalledWith(optimisticUpdate);
     expect(withUpdate).toHaveBeenCalledTimes(1);
     expect(convexMutation).toHaveBeenCalledTimes(0);
-    // Not a TanStack option: it never reaches useMutation's options.
     expect('optimisticUpdate' in result.current).toBe(false);
   });
 

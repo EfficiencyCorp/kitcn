@@ -180,7 +180,6 @@ describe('createCRPCContext', () => {
       httpProxyModule,
       'createHttpProxy'
     ).mockReturnValue({} as any);
-    // The cache still holds a long-lived token the fetcher's guard refuses.
     useAuthStoreSpy.mockImplementation(
       () =>
         ({
@@ -214,7 +213,6 @@ describe('createCRPCContext', () => {
         ?.headers as () => Promise<Record<string, string>>;
 
       expect(await headers()).toEqual({ Authorization: 'Bearer token-a' });
-      // The guard tripped: nothing, not even the cached token, goes out.
       guarded = null;
       expect(await headers()).toEqual({});
       expect(fetchAccessToken).toHaveBeenCalledTimes(2);

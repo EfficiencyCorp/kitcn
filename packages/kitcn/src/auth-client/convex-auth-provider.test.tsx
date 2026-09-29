@@ -1313,6 +1313,10 @@ describe('ConvexAuthProvider', () => {
   });
 
   describe('onTokenIdentityChange', () => {
+    type FetchToken = (args: {
+      forceRefreshToken: boolean;
+    }) => Promise<string | null>;
+
     const identityJwt = (sub: string, sessionId: string, expSeconds = 3600) => {
       const payload = btoa(
         JSON.stringify({
@@ -1324,12 +1328,25 @@ describe('ConvexAuthProvider', () => {
       return `x.${payload}.z`;
     };
 
+    const fetchWithAct = async (
+      fetchToken: FetchToken,
+      forceRefreshToken: boolean
+    ) => {
+      let token: string | null = null;
+      await act(async () => {
+        token = await fetchToken({ forceRefreshToken });
+      });
+      return token;
+    };
+
     const guardHarness = ({
       guard,
       refreshed,
+      throws = false,
     }: {
       guard: boolean;
       refreshed: string;
+      throws?: boolean;
     }) => {
       let fetchToken:
         | ((args: { forceRefreshToken: boolean }) => Promise<string | null>)
@@ -1349,7 +1366,9 @@ describe('ConvexAuthProvider', () => {
         updateSession: () => {},
         crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
       };
-      const onTokenIdentityChange = mock(() => {});
+      const onTokenIdentityChange = mock(() => {
+        if (throws) throw new Error('identity callback failed');
+      });
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ConvexAuthProvider
           authClient={authClient as any}
@@ -1366,7 +1385,7 @@ describe('ConvexAuthProvider', () => {
         onTokenIdentityChange,
         fetch: (forceRefreshToken: boolean) => {
           if (!fetchToken) throw new Error('setAuth was not called');
-          return fetchToken({ forceRefreshToken });
+          return fetchWithAct(fetchToken, forceRefreshToken);
         },
       };
     };
@@ -1390,7 +1409,6 @@ describe('ConvexAuthProvider', () => {
       };
       const tokenForB = identityJwt('user_b', 'session_b');
       const authClient = {
-        // Better Auth already has a session: kitcn fetches instead of reusing A.
         useSession: () => ({
           data: { session: { id: 'session_a' }, user: { id: 'user_a' } },
           isPending: false,
@@ -1415,12 +1433,11 @@ describe('ConvexAuthProvider', () => {
       await flush();
       if (!fetchToken) throw new Error('setAuth was not called');
 
-      expect(await fetchToken({ forceRefreshToken: false })).toBeNull();
+      expect(await fetchWithAct(fetchToken, false)).toBeNull();
       expect(onTokenIdentityChange).toHaveBeenCalledTimes(1);
       expect(close).toHaveBeenCalledTimes(1);
-      // B never reached the cache, and nothing is handed out any more.
       expect(result.current.get('token')).not.toBe(tokenForB);
-      expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
+      expect(await fetchWithAct(fetchToken, true)).toBeNull();
     });
 
     test('no SSR token: the first token a sign-in obtains sets the identity', async () => {
@@ -1460,7 +1477,7 @@ describe('ConvexAuthProvider', () => {
       await flush();
       if (!fetchToken) throw new Error('setAuth was not called');
 
-      expect(await fetchToken({ forceRefreshToken: false })).toBe(tokenForC);
+      expect(await fetchWithAct(fetchToken, false)).toBe(tokenForC);
       expect(onTokenIdentityChange).toHaveBeenCalledTimes(0);
       expect(close).toHaveBeenCalledTimes(0);
     });
@@ -1469,6 +1486,20 @@ describe('ConvexAuthProvider', () => {
       const harness = guardHarness({
         guard: true,
         refreshed: identityJwt('user_b', 'session_b'),
+      });
+      await flush();
+
+      expect(await harness.fetch(false)).not.toBeNull();
+      expect(await harness.fetch(true)).toBeNull();
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(harness.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('closes the client even when the identity-change callback throws', async () => {
+      const harness = guardHarness({
+        guard: true,
+        refreshed: identityJwt('user_b', 'session_b'),
+        throws: true,
       });
       await flush();
 
@@ -1490,7 +1521,6 @@ describe('ConvexAuthProvider', () => {
     });
 
     describe('tokenIdentityBaseline', () => {
-      /** A remount without a token, whose first fetch returns `obtained`. */
       const remount = ({
         baseline,
         obtained,
@@ -1538,7 +1568,7 @@ describe('ConvexAuthProvider', () => {
           onTokenIdentityChange,
           fetch: (forceRefreshToken: boolean) => {
             if (!fetchToken) throw new Error('setAuth was not called');
-            return fetchToken({ forceRefreshToken });
+            return fetchWithAct(fetchToken, forceRefreshToken);
           },
         };
       };
@@ -1583,11 +1613,6 @@ describe('ConvexAuthProvider', () => {
     });
 
     describe('tokenIdentityBaseline getter and onTokenIdentityAdmitted', () => {
-      /**
-       * A mount with a Better Auth session and no token of its own; each
-       * fresh fetch returns the next of `obtained`. `document.identity` is
-       * what the baseline getter answers, read whenever the guard asks.
-       */
       const documentHarness = ({
         getter = true,
         guard = true,
@@ -1660,7 +1685,7 @@ describe('ConvexAuthProvider', () => {
           setAuth,
           fetch: (forceRefreshToken: boolean) => {
             if (!fetchToken) throw new Error('setAuth was not called');
-            return fetchToken({ forceRefreshToken });
+            return fetchWithAct(fetchToken, forceRefreshToken);
           },
           replaceOnAdmitted: (next: (token: string) => void) => {
             onAdmitted = next;
@@ -1670,13 +1695,12 @@ describe('ConvexAuthProvider', () => {
       };
 
       test('the getter is read at admission, not at mount: a remount refuses a token of another identity', async () => {
-        // The document speaks for no one when this provider mounts, then
-        // another mount establishes A before this one's first token arrives.
         const harness = documentHarness({
           identity: null,
           obtained: [identityJwt('user_b', 'session_b')],
         });
         await flush();
+        expect(harness.readBaseline).toHaveBeenCalledTimes(0);
         harness.document.identity = 'user_a|session_a';
 
         expect(await harness.fetch(false)).toBeNull();
@@ -1685,6 +1709,21 @@ describe('ConvexAuthProvider', () => {
         expect(harness.close).toHaveBeenCalledTimes(1);
         expect(harness.onTokenIdentityAdmitted).toHaveBeenCalledTimes(0);
         expect(await harness.fetch(true)).toBeNull();
+      });
+
+      test('the getter current identity owns the first admission', async () => {
+        const tokenForB = identityJwt('user_b', 'session_b');
+        const harness = documentHarness({
+          identity: 'user_a|session_a',
+          obtained: [tokenForB],
+        });
+        await flush();
+        expect(harness.readBaseline).toHaveBeenCalledTimes(0);
+        harness.document.identity = 'user_b|session_b';
+
+        expect(await harness.fetch(false)).toBe(tokenForB);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+        expect(harness.close).toHaveBeenCalledTimes(0);
       });
 
       test('a cached token is refused once the document moved to another identity', async () => {
@@ -1696,11 +1735,9 @@ describe('ConvexAuthProvider', () => {
         await flush();
 
         expect(await harness.fetch(false)).toBe(tokenForA);
-        // Kept mounted but hidden while the document moved on to B.
         harness.document.identity = 'user_b|session_b';
 
         expect(await harness.fetch(false)).toBeNull();
-        // The refused token was the cached one: no second fetch happened.
         expect(harness.convexToken).toHaveBeenCalledTimes(1);
         expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
         expect(harness.close).toHaveBeenCalledTimes(1);
@@ -1812,7 +1849,6 @@ describe('ConvexAuthProvider', () => {
     ) => {
       let reportAuth: ((isAuthenticated: boolean) => void) | null = null;
       const client = {
-        // Holds the confirmation until the test decides what the server says.
         setAuth: (_fetchToken: unknown, onChange: (value: boolean) => void) => {
           reportAuth = onChange;
         },
@@ -1881,7 +1917,6 @@ describe('ConvexAuthProvider', () => {
       expect(result.current.auth.isAuthenticated).toBe(false);
       expect(result.current.auth.isLoading).toBe(true);
 
-      // The same token held again never counts as authenticated again.
       await act(async () => {
         result.current.store.set('isLoading', true);
       });

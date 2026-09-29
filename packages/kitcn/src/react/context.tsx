@@ -238,8 +238,6 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
         convexSiteUrl: httpOptions.convexSiteUrl,
         routes: meta._http,
         headers: async () => {
-          // Through the same token fetcher Convex uses, so its guards (the
-          // identity guard) apply to HTTP requests too.
           if (fetchAccessToken) {
             const expiresAt = authStore.get('expiresAt');
             // eslint-disable-next-line react-hooks/purity -- called in async callback, not during render
