@@ -1,0 +1,663 @@
+# feat(react): optimistic auth gate, token identity guard, optimisticUpdate passthrough, deterministic server construction
+
+Objective:
+Adopt PR #473 through a dedicated task run: record per-PR plan evidence for
+its existing implementation (auth gate, identity guard, optimisticUpdate,
+server logger) and prove it with focused tests and `bun check`.
+
+Goal plan:
+docs/plans/473-optimistic-auth-gate.md
+
+Template:
+docs/plans/templates/task.md
+
+Primary template:
+docs/plans/templates/task.md
+
+Applied packs:
+- package-api (docs/plans/templates/packs/package-api.md)
+
+Task source:
+- type: GitHub PR, single-PR feature plus one bug fix, one package
+- id / link: #473 https://github.com/udecode/kitcn/pull/473
+- title: feat(react): optimistic auth gate, token identity guard,
+  optimisticUpdate passthrough, deterministic server construction
+- branch: `feat/optimistic-auth-gate` (EfficiencyCorp fork), base `main`
+  3250fb9c; PR head before this plan: 424a3bec (commits 07b5927f main change,
+  8f756193 `tokenIdentityBaseline`, 424a3bec getter and
+  `onTokenIdentityAdmitted`).
+- acceptance criteria (PR body What 1-5 plus both Update sections):
+  1. `optimisticAuth` (default `false`): the gate opens on a held, unexpired
+     JWT before Convex confirms it; expired or opaque tokens never open it; a
+     refused token closes it and never reopens it.
+  2. `onTokenIdentityChange`: the document keeps one identity (JWT `sub` and
+     `sessionId`); a token for another identity is refused before it is
+     cached, the Convex client is closed, later token requests answer null,
+     the callback runs; same-session refreshes pass.
+  3. cRPC HTTP headers take their token from the guarded fetcher in
+     `FetchAccessTokenContext`; without a fetcher the cache is read as before.
+  4. cRPC `mutationOptions` and `useConvexMutationOptions` accept
+     `optimisticUpdate`, handed to `withOptimisticUpdate`, never to TanStack.
+  5. The server `ConvexQueryClient`'s `ConvexHttpClient` reuses the Convex
+     client's logger: constructing and querying call no `Math.random()`, and
+     per-request auth and snapshots are unchanged.
+  6. Update 1: `tokenIdentityBaseline?: string | null` seeds the guard for a
+     provider that remounts within one document.
+  7. Update 2: `tokenIdentityBaseline` also accepts a getter read at every
+     admission (cached tokens included); `onTokenIdentityAdmitted` hears
+     every admitted token once, never a refused one.
+  8. Default behaviour is unchanged when no new option is set.
+- closure and reopen history:
+  - 2026-09-29T21:54:00Z zbeyens commented the autoclosure remediation:
+    "Closing because this PR has no verifiable per-PR `task` run. Every PR
+    must include `🧭 Task plan: docs/plans/<plan>.md` in its body, that plan
+    must exist at the PR head, and it must identify this exact PR." The PR
+    was closed at 21:54:10Z, before any code review.
+  - 2026-09-29T22:11:18Z zbeyens reopened the PR and at 22:11:25Z edited the
+    same comment to: "Reopened. The prior closure followed the old
+    all-or-nothing task-evidence gate. This PR has a substantive,
+    source-backed implementation to continue from, so autoclosure should
+    adopt the existing branch through a dedicated `$kitcn:task
+    https://github.com/udecode/kitcn/pull/473` run, repair the per-PR plan
+    evidence at the PR head, then continue normal review and proof. Closing
+    is reserved for PRs with no usable task state."
+  - This plan follows that note: the implementation predates the plan and is
+    unchanged; the plan is adopted onto the existing branch in a commit on
+    top of 424a3bec.
+- caveat: no product behaviour changes in this run. Added on top of 424a3bec:
+  a JSDoc placement fix, a test-isolation fix for a pre-existing test outside
+  the original diff (see Findings), docs for the new options, and this plan.
+- likely files: `auth-client/convex-auth-provider.tsx`, `react/context.tsx`,
+  `react/crpc-types.ts`, `react/use-query-options.ts`, `react/client.ts` and
+  their tests; `.changeset/optimistic-auth-gate.md`.
+- browser surface: none rendered; provider state, token hand-out, mutation
+  wiring and server construction are covered by Bun/React tests.
+- root-cause layer: the provider's token fetcher and gate state; the cRPC
+  mutation hook; the server `ConvexQueryClient` constructor.
+
+Task PR:
+#473 https://github.com/udecode/kitcn/pull/473
+
+Timed checkpoint:
+- requested duration: N/A; no duration requested.
+- semantics: N/A.
+- initial confidence score: N/A; focused tests and `bun check` are the
+  threshold.
+- improvement loop: N/A.
+- final score / loop closure: N/A.
+
+Completion threshold:
+- Every acceptance criterion has a passing focused test or typecheck.
+- Item 5 is reproduced red against the unfixed source and green with the fix.
+- `bun --cwd packages/kitcn typecheck`, `bun --cwd packages/kitcn build`,
+  `bun lint:fix` (source unchanged) and `bun check` run with exact results.
+- The changeset follows the `changeset` skill.
+- Task closure is legal only when the source-of-truth acceptance criteria are
+  satisfied or explicitly narrowed, required verification evidence is recorded,
+  code-review and release-artifact gates are closed when applicable, verified
+  code changes are committed and PR'd unless explicitly declined or blocked,
+  task-style PR body sync is complete or marked N/A with reason,
+  GitHub issue/PR sync is complete or marked N/A with reason, and
+  `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-optimistic-auth-gate.md` passes.
+
+Verification surface:
+- `bun test` on `convex-auth-provider.test.tsx`, `context.test.tsx`,
+  `use-query-options.test.tsx`, `client.test.ts`
+- `bun test packages/kitcn/src/auth-client packages/kitcn/src/react`
+- `bun test packages/kitcn/src/react/client.test.ts` against `main`'s
+  `client.ts` (red) and the PR's (green)
+- `bun --cwd packages/kitcn typecheck`, `bun --cwd packages/kitcn build`
+- `bun lint:fix`, `bun check` (Bun 1.3.9, the repo's `packageManager` pin)
+- `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-optimistic-auth-gate.md`
+
+Constraints:
+- No behaviour change in this run; the existing implementation is proven,
+  not rewritten. A real defect found while proving it is reported first and
+  fixed only on the requester's ruling, as its own commit.
+- No history rewrite: new commits land on top of 424a3bec in this order:
+  JSDoc fix, test fix, docs, plan.
+- Every new option is opt-in and default-off.
+- When a GitHub PR is in scope, this plan owns exactly one PR. A coordinating
+  batch plan must link a separate task plan for every PR an agent processes.
+- Verified code changes must be committed and PR'd because the task skill
+  requires that path unless the user explicitly says not to, the work has no
+  local patch, or a real blocker is recorded.
+- The absence of a separate "open a PR" sentence from the user is not a valid
+  N/A reason for verified code-changing task work.
+- A PR created by this task must use the PR #270 emoji task-style PR body
+  contract below, not a generic summary/body from a git helper skill.
+- A task-run PR body must include
+  `🧭 Task plan: docs/plans/<plan>.md`; the plan must exist at the PR head and
+  identify the exact PR before autoclosure.
+
+Boundaries:
+- Source of truth: PR #473 body (Why, What 1-5, Tests, both Update sections)
+  and the maintainer's reopen note.
+- Allowed edit scope: this plan; the `DecorateMutation` JSDoc placement;
+  `auth-start/index.retry.test.ts` isolation (maintainer-side ruling after
+  the contamination finding); `www/` and `packages/kitcn/skills/kitcn/**`
+  docs for the new options; the changeset only if the `changeset` skill
+  requires it (it does not; see Decisions).
+- Browser surface: none.
+- GitHub issue sync: N/A; no issue backs this PR.
+- Non-goals: new behaviour, splitting the PR, default-on auth behaviour,
+  resyncing unrelated fixture drift, converting other `mock.module` calls.
+
+Output budget strategy:
+- Test, build and gate output goes to `/tmp/kitcn-473*.log`; only summary
+  lines (pass/fail counts, exit codes, drifted file names) are read back.
+
+Blocked condition:
+- Stop if a focused test fails, if item 5 does not reproduce red against the
+  unfixed source, or if `bun check` fails on a lane the diff can affect
+  (it did once: see Findings; resumed after the requester's ruling).
+
+Task state:
+- task_type: feature with one bug fix (one package, additive, opt-in)
+- task_complexity: non-trivial
+- current_phase: closeout
+- current_phase_status: complete locally
+- next_phase: requester pushes the plan commit and updates the PR body;
+  review continues on the PR
+- goal_status: locally complete
+
+Current verdict:
+- verdict: ready for review
+- confidence: 92%
+- next owner: requester (push, PR body), then maintainer review
+- reason: every acceptance criterion has a passing focused test and every
+  gate lane the diff can affect passes; the socket-ordering premise rests on
+  the #473 probe, and `test:runtime` could not run on this machine.
+
+Implementation readiness:
+- verdict: ready (implementation exists; plan adopted)
+- exact owner: `ConvexAuthProviderInner` token fetcher and `AuthStateSync`;
+  `createCRPCContext` HTTP headers; `useConvexMutationOptions`;
+  `ConvexQueryClient` constructor
+- contradiction status: none
+- source-listed cases complete: yes (see case matrix)
+
+Pre-solution issue challenge:
+- reporter claim: (a) on a hard load with an SSR token, auth-bound queries
+  wait one socket round trip for Convex to confirm the token; (b) a refresh
+  returning another identity lets Convex resume queued writes as that
+  identity; (c) cRPC mutations cannot use Convex's native optimistic
+  updates; (d) server `ConvexQueryClient` construction calls `Math.random()`,
+  which Next Cache Components prerendering refuses.
+- suggested diagnosis or fix: the five What items of the PR body.
+- repro ladder:
+  - tests / source-level repro: (a) to (c) are feature requests; the tests
+    show the default gate stays closed until confirmation and that the new
+    options change only opted-in behaviour. (d) is a bug:
+    `client.test.ts` against `main`'s `client.ts` on this branch gives 13
+    pass, 1 fail ("constructing and querying call no Math.random": expected
+    0 calls, received 1).
+  - repo-owned automated browser or integration proof: N/A; the React and
+    Bun harnesses own every state transition and call count.
+  - Browser plugin: N/A; no rendered UI.
+  - screenshot / visual proof: N/A; nothing visual.
+- reproduction verdict: (a) to (c) N/A (feature requests); (d) reproduced.
+- validity verdict: (d) valid; (a) to (c) N/A for features, premise evidence
+  in Design rationale.
+- best long-term fix boundary: the single token fetcher every consumer uses;
+  the hook that builds the Convex mutation; the server client constructor.
+- harsh honest feedback: four auth props is a wide surface for one provider;
+  each answers a distinct mount shape and all default off. Item 3 changes the
+  HTTP header path for every app with an auth provider (see High-risk note).
+- hard-stop decision: proceed.
+
+Completion rule:
+- Do not call `update_goal(status: complete)` while any required checklist item
+  remains unchecked. If an item does not apply, check it and add `N/A: <reason>`.
+- Do not call `update_goal(status: complete)` until every completion threshold
+  above is satisfied, final handoff evidence is recorded, and
+  `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-optimistic-auth-gate.md` passes.
+- Codex goal tools (`create_goal`, `update_goal`) are unavailable in this run
+  (Claude Code). `check-complete.mjs` is the completion proof.
+- Do not create hook state for this goal. This file is the durable state.
+
+Start Gates:
+| Gate | Applies | Evidence |
+|------|---------|----------|
+| Timed checkpoint parsed | no | N/A: no duration requested |
+| Walkthrough baseline for possible UI change | no | N/A: no UI or rendered output changes |
+| Skill analysis before edits | yes | `task`, `autogoal` (task template + package-api pack), `changeset`; `major-task` not used (see Decisions) |
+| Active goal checked or created | yes | This plan; Codex goal tools unavailable, noted in Completion rule |
+| Source of truth read before edits | yes | `gh pr view 473` body, comments and close/reopen events read |
+| Exact per-PR task ownership | yes | #473 https://github.com/udecode/kitcn/pull/473 |
+| GitHub comments and attachments read | yes | Autoclosure comment (edited to the reopen note), changeset-bot and Vercel comments; no attachments |
+| Video transcript evidence required | no | N/A: no video evidence |
+| Pre-solution issue challenge required | yes | Recorded above; item (d) reproduced |
+| Reproduction verdict before implementation | yes | (d) reproduced red; (a) to (c) N/A as features |
+| Repro escalation ladder selected | yes | Focused Bun test; higher rungs N/A (server call count, provider state) |
+| Suggested fix reviewed against durable boundary | yes | Each item sits at its single owner (see Implementation readiness) |
+| `docs/solutions` checked for non-trivial existing-code work | yes | No `docs/solutions` entry covers these owners |
+| TDD decision before behavior change or bug fix | yes | Implementation predates the plan; item (d) red/green replayed by swapping in `main`'s `client.ts`; features proven by their tests |
+| Branch decision for code-changing task | yes | Existing PR branch `feat/optimistic-auth-gate`; four commits on top of 424a3bec, no rewrite of pushed history |
+| Release artifact decision | yes | Existing `.changeset/optimistic-auth-gate.md` kept (see Decisions) |
+| Browser tool decision for browser surface | no | N/A: no browser surface |
+| Commit / PR expectation decision | yes | Plan commit local; the requester pushes it to the PR branch and updates the body |
+| Task-style PR body decision | yes | Replacement body drafted in the PR #270 / #459 task style |
+| Task-plan PR body evidence | yes | Draft body carries one `🧭 Task plan: docs/plans/473-optimistic-auth-gate.md` line; this plan names #473 |
+| GitHub issue sync expectation decision | no | N/A: no issue backs this PR |
+| Output budget strategy recorded | yes | Logs to `/tmp`, summaries only |
+| Package/API pack selected | yes | New public props and options in `packages/kitcn` |
+| Public surface or package boundary identified | yes | `ConvexAuthProviderProps` (4 optional props); cRPC `mutationOptions` option and `ConvexOptimisticUpdateOption` type; HTTP header token source; server `ConvexHttpClient` logger |
+| Convex entry/import graph impact identified | no | N/A: client and SSR entries only; the one new import (`convex/browser` `OptimisticUpdate`) is type-only |
+| CLI/scaffold/generated impact identified | no | N/A: no CLI, scaffold or generated output touched |
+| Release artifact path selected | yes | `.changeset/optimistic-auth-gate.md` (patch) |
+| `changeset` skill loaded when `.changeset` is required | yes | Loaded; reuse rule, bump level and sections checked |
+| Package build / fixture impact decision recorded | yes | Package build run; fixtures unaffected by the diff |
+
+Work Checklist:
+- [x] If a duration was requested, it is recorded as minimum active work unless
+      explicitly marked hard stop; when no better metric exists, initial and
+      final confidence scores are recorded. N/A: no duration requested.
+- [x] Objective includes outcome, completion threshold, verification surface,
+      constraints, boundaries, and blocked condition.
+- [x] Task source classified with source type, id/link, title, task type,
+      acceptance criteria, caveats, likely files/routes/packages, browser
+      surface, and root-cause layer.
+- [x] Every GitHub PR in scope has its own task plan. This plan owns one exact
+      PR, owns a not-yet-created PR slice, or records N/A because no PR is in
+      scope; a batch plan is not used as a substitute. Owns #473.
+- [x] Required video or screen-recording evidence is cached/read as normalized
+      `<video-transcripts>` XML, or marked N/A with reason. N/A: none.
+- [x] For public GitHub bug reports, behavior claims, technical diagnoses, or
+      suggested fixes, reporter claims are challenged before implementation
+      with a recorded verdict: `valid`, `not reproduced`, `invalid`,
+      `wont-fix`, `partially valid`, or `platform limitation`. Feature, docs,
+      support, or cleanup requests with no bug claim may mark reproduction
+      `N/A` with reason. (d) valid; (a) to (c) N/A as features.
+- [x] Repro escalation ladder followed for bug/behavior claims: focused
+      test/source-level repro first when applicable; existing repo-owned
+      automated browser or integration proof next when available and useful as
+      executable coverage; the repo-approved Browser tool next when tests or
+      automation cannot reproduce or cannot model the surface honestly;
+      screenshot or explicit visual-proof waiver when visual/native state
+      matters. (d) reproduced at the first rung.
+- [x] Hard-stop rule followed for bug/behavior claims: no code when the issue
+      is not reproduced, invalid, or won't-fix; partial validity pivots to the
+      best long-term fix and records what was wrong or incomplete in the
+      issue's proposed path. Reproduced; no hard stop.
+- [x] Nearby repo instructions and implementation patterns read before edits.
+- [x] Source-listed case matrix is complete and every contradiction has an
+      owner, harness, and verdict before mutation.
+- [x] Readiness is classified `ready`, `repair-source`, `major`, `blocked`, or
+      `invalid` with evidence.
+- [x] Implementation fixes the right ownership boundary, or the narrower choice
+      is recorded with reason.
+- [x] Release artifact requirement recorded: active changeset, new changeset, or
+      N/A with reason. Active changeset kept.
+- [x] Final handoff shape decided: bug/feature/testing/batch/review/GitHub
+      requirements, PR body sync, and issue sync when applicable.
+- [x] Commit/PR handling recorded for code-changing work: commit and PR
+      completed, no local patch, user explicitly declined, or blocker recorded.
+      "User did not separately ask for a PR" is not a valid blocker. The PR
+      exists; the plan commit is local and the requester pushes it.
+- [x] PR body shape recorded: PR #270 emoji task-style body used, N/A reason
+      recorded, or blocker recorded.
+- [x] PR task evidence recorded: body includes `🧭 Task plan: ...`, the plan
+      exists at the PR head, and it identifies the exact PR before autoclosure.
+      This plan names #473; it is at the head once the requester pushes.
+- [x] Branch handling recorded for code-changing work: dedicated branch used,
+      new branch needed, or N/A with reason.
+- [x] Local-env-rot retry policy recorded for any surprising repo-wide failure:
+      reinstall/rerun evidence or N/A with reason. See Error attempts.
+- [x] Workspace authority recorded: every proof command names the cwd/tool that
+      owns the changed behavior.
+- [x] Output budget discipline recorded and followed: broad searches are
+      scoped, capped, counted, or artifacted instead of streamed into goal
+      context.
+- [x] High-risk note recorded for public API, runtime, package-boundary,
+      browser behavior, agent-action, or command-contract changes, or marked
+      N/A with reason.
+- [x] Review/autoreview target selected from actual diff state for non-trivial
+      implementation work, or marked N/A with reason. Target: PR diff against
+      `main`; reviewed by the requester's independent lanes and the
+      maintainer's review on the PR.
+- [x] Agent-native review decision recorded for `.agents/**`, `.claude/**`,
+      `.codex/**`, skills, hooks, commands, prompts, or user-action tooling.
+      N/A: none touched.
+- [x] Package/API pack: public API, package boundary, export, and release-artifact impact are recorded.
+- [x] Package/API pack: release artifact matrix is applied: `.changeset` or explicit no-artifact reason.
+- [x] Package/API pack: `.changeset` work loads `changeset` and follows its package/version/prose rules.
+- [x] Package/API pack: no-artifact decisions state why the diff has no published package user-visible delta from `main`. N/A: a changeset exists.
+- [x] Package/API pack: compatibility, migration, or hard-cut decision is explicit when public shape changes. Additive optional props and option; no migration.
+- [x] Package/API pack: affected Convex static import graphs stay narrow and
+      plugin/per-module boundaries are used where appropriate. N/A: client and SSR files only.
+- [x] Package/API pack: CLI commands remain deterministic, `--json` capable,
+      and non-interactive with explicit confirmation bypass when relevant. N/A: no CLI.
+- [x] Package/API pack: docs and `packages/kitcn/skills/kitcn/**` stay
+      current-state synchronized when public guidance changes. `www/` auth
+      client and mutations pages plus the skill's auth and react references
+      updated and synced.
+- [x] Package/API pack: package-owned typecheck/build/test proof is recorded or marked N/A with reason.
+- [x] Package/API pack: `packages/kitcn` build, fixture sync/check, or other owning package proof is recorded when required.
+
+Completion Gates:
+| Gate | Applies | Required action | Evidence |
+|------|---------|-----------------|----------|
+| Named verification threshold | yes | Run the command, proof, source audit, or artifact check named in this plan | See Verification evidence |
+| Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | #473, this dedicated plan |
+| Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Recorded above |
+| Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | (d) reproduced by unit test; other rungs N/A with reason |
+| Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | `client.test.ts` with `main`'s `client.ts`: 13 pass, 1 fail, exit 1 |
+| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 94 pass, 0 fail (4 files); 95 with `index.retry.test.ts` |
+| TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` exit 0 |
+| Package exports or file layout changed | yes | Run the relevant package build before final verification and keep generated updates | `bun --cwd packages/kitcn build` exit 0; no generated updates |
+| Package manifests, lockfile, or install graph changed | no | Run `bun install` and relevant package checks | N/A: no manifest or lockfile change |
+| Agent rules or skills changed | no | Run `bun install` and verify generated skill sync | N/A: none touched |
+| Workspace authority proof | yes | Run verification in the owning repo/package/app/route/tool and record cwd; do not count the wrong workspace as proof | All commands run at the kitcn repo root on `feat/optimistic-auth-gate` |
+| Browser surface changed | no | Capture Browser Use proof or record explicit waiver/blocker | N/A: no rendered UI |
+| Browser final proof | no | Attach screenshot or exact browser verification caveat when browser proof applies | N/A: no rendered UI |
+| UI walkthrough | no | If UI or rendered output changed, run `.agents/skills/walkthrough/SKILL.md` after final proof and show annotated images in the final handoff; otherwise record N/A | N/A: no rendered output |
+| Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A: no scaffold change; `fixtures:check` drift is external and reproduces on `main` (see Verification evidence); not synced here |
+| Package behavior or public API changed | yes | Add a changeset or record why no changeset applies | `.changeset/optimistic-auth-gate.md` (patch) |
+| Docs and kitcn skill sync changed | yes | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | `www/content/docs/auth/client.mdx` and `react/mutations.mdx` mirrored in `packages/kitcn/skills/kitcn/references/features/auth.md` and `react.md`; `bun tooling/sync-kitcn-skill.ts` synced `.agents/skills/kitcn`; `bun run intent:validate` "all passed", `bun run intent:stale` "All skills up-to-date" |
+| Docs or content changed | yes | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | Incidental docs: every claim sourced from the provider and hook JSDoc and tests; latest-state wording, no changelog language |
+| High-risk mini gate | yes | For public API/runtime/package-boundary/browser/agent-action/command-contract changes, record realistic failure mode, proof plan, and why the chosen boundary is right; otherwise N/A | See High-risk note |
+| Agent-native review for agent/tooling changes | no | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | N/A: none touched |
+| Local install corruption suspected | yes | Run `bun install` once, rerun the exact failing command, or record N/A | Reinstalled with the pinned Bun 1.3.9; the Bun 1.4.1 failures do not reproduce (see Error attempts) |
+| Commit created | yes | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | On top of 424a3bec: JSDoc fix, test isolation fix, docs, plan |
+| PR create or update | handed-off | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | PR #473 exists; `bun check` run; push and body update reserved by the requester |
+| Task-style PR body verified | handed-off | Verify the PR body with `gh pr view --json body`; it must preserve auto-release blocks when applicable, must not include a current-PR self-link, and must use the PR #270 emoji format: `🐛 Fixes ...`, `🟢 95-100% confidence`, `Phase / 🧪 Tests / 🌐 Browser` table, and bold emoji Outcome/Caveat/Design/Verified sections | Replacement body drafted; `gh pr view 473 --json body` read-back belongs to whoever applies it |
+| PR task evidence verified | handed-off | Verify body plan line, plan at PR head, and exact PR ownership | Draft body has one plan line; this plan names #473; head check after push |
+| PR proof image hosting | no | If PR body needs browser proof, replace local image paths with hosted GitHub URLs or record N/A | N/A: no images |
+| GitHub issue sync-back | no | Post concise issue sync after PR exists, or record N/A/blocker | N/A: no issue |
+| Final handoff contract | yes | Fill the final handoff fields below with exact PR/issue/confidence/tests/browser/outcome/caveats/design/verification content or N/A reason | Filled below |
+| Final lint | yes | Run `bun lint:fix` or scoped equivalent | `bun lint:fix` exit 0, 975 files, no fixes applied; `git status` showed only this untracked plan, so source unchanged |
+| Output budget discipline | yes | Verify no unbounded high-volume command output was streamed, or record the accidental output and recovery | Logs to `/tmp`, summaries only |
+| Timed checkpoint | no | If duration was requested, keep improving until elapsed, then finish the current loop cleanly; otherwise N/A | N/A: no duration |
+| Autoreview for non-trivial implementation changes | handed-off | Load `.agents/skills/autoreview/SKILL.md`; use dirty local `--mode local`, branch/PR `--mode branch --base <base>`, or committed slice `--mode commit --commit <ref>` until no accepted/actionable findings, or record N/A for docs-only/trivial/no local patch | Independent review of the PR diff by the requester's review lanes; maintainer review continues on the PR |
+| Goal plan complete | yes | Run `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-optimistic-auth-gate.md` | `[autogoal] complete` |
+| Public API / package boundary proof | yes | Source-audit public API, exports, and package boundary impact | Optional props and option only; one new exported type `ConvexOptimisticUpdateOption`; no removed or renamed export |
+| Convex bundle/import proof | no | Audit affected function-entry static graphs or record N/A | N/A: client and SSR entries; type-only `convex/browser` import |
+| CLI/scaffold/generated proof | no | Prove command contract and regenerate owned output or record N/A | N/A: none touched |
+| Release artifact classification | yes | Record whether the change is published package behavior/API/types/config/runtime or no published user-visible delta | Published package API and runtime |
+| Published package changeset | yes | If published package users see a delta, load `changeset` and add/update one `.changeset/*.md` per package | One `kitcn` patch changeset, kept |
+| No release artifact | no | If no artifact is needed, record the exact reason: internal-only, docs-only, agent-only, test-only, or no user-visible delta from `main` | N/A: a changeset exists |
+| Package typecheck/build/test | yes | Run owning package checks or record N/A with reason | typecheck 0, build 0, focused tests pass |
+| Fixture/scaffold generation | no | Run `bun run fixtures:sync` and `bun run fixtures:check` when scaffold output changed, otherwise N/A | N/A: no scaffold change |
+| Docs/package skill sync | yes | Synchronize current-state public guidance or record N/A | Four provider props and `optimisticUpdate` documented in `www/` and the published kitcn skill; intent validate and stale pass |
+
+Phase / pass table:
+| Phase | Status | Evidence | Next |
+|-------|--------|----------|------|
+| Intake and source read | done | PR body, comments, close/reopen events | reproduction |
+| Reproduction | done | Item (d) red: 13 pass, 1 fail | verification |
+| Implementation | done | Predates the plan (07b5927f, 8f756193, 424a3bec); unchanged. Added: JSDoc fix, test isolation fix, docs | verification |
+| Verification | done | Focused tests, typecheck, build, lint:fix, bun check (see evidence) | closeout |
+| Commit / PR / GitHub sync | handed-off | Plan committed locally; push and body update reserved by the requester | requester |
+| Closeout | done | check-complete passes | final response |
+
+Findings:
+- The implementation splits cleanly by file (auth provider + context;
+  mutation options; server client): each part compiled and passed its own
+  tests without the others in a local proof, so no cross-file dependency.
+- `package-entrypoints.integration.test.tsx` needs `packages/kitcn/dist`
+  (`Cannot find module 'kitcn/auth/client'` before the first build).
+- Under Bun 1.4.1, 12 CLI tests and one `reconcile auth schema` test fail on
+  `main` too; under the pinned Bun 1.3.9 they pass.
+- JSDoc placement: in `crpc-types.ts` the JSDoc "Decorated mutation
+  procedure with mutationOptions and mutationKey methods." sat above the new
+  `ConvexOptimisticUpdateOption` type instead of `DecorateMutation`. Moved
+  back onto `DecorateMutation` in its own commit (no behaviour change).
+- Test contamination (defect in this PR's proof, found by `bun check`): the
+  full `test:bun` run gave 1471 pass, 2 fail. The two new `client.test.ts`
+  server-mode tests failed with `this.serverHttpClient.consistentQuery is
+  not a function` at `client.ts:751`; alone they pass 14/14. Repro:
+  `bun test packages/kitcn/src/auth-start/index.retry.test.ts
+  packages/kitcn/src/react/client.test.ts` gave 13 pass, 2 fail.
+  Root cause: `auth-start/index.retry.test.ts` (on `main` already) replaced
+  `convex/browser` with `mock.module`, a process-global stub
+  `ConvexHttpClient` without `consistentQuery`. The older `client.test.ts`
+  tests assign `serverHttpClient` by hand; the new ones construct through
+  the real `convex/browser`, so they received the stub.
+  Fix: `index.retry.test.ts` now spies on the real
+  `ConvexHttpClient.prototype` (`setAuth`, `setFetchOptions`, `query`,
+  `mutation`, `action`) with `spyOn`, restored by its existing
+  `mock.restore()`. The fix sits outside the original diff because that file
+  owns the leak: kitcn's `testing` skill says "`mock.module()` is
+  process-global - use `spyOn()` instead", so the durable owner is the
+  leaking test, not a workaround in the new tests. Same test name, same
+  single test, same three assertions.
+  Proof: the retry test alone 1 pass (1 before); the two-file repro 15 pass,
+  0 fail; full suite in Verification evidence.
+- Remaining `mock.module` calls in the package (`../auth/internal/token` x3,
+  `convex/nextjs` x2, `@tanstack/react-start/server` x2, `execa` x1) target
+  modules `react/client.ts` does not import, so they cannot reach these
+  tests; not converted (out of scope). No other `mock.module('convex/browser')`
+  exists.
+
+Decisions and tradeoffs:
+- Classification: `task`, not `major-task`. One package (`packages/kitcn`),
+  additive, opt-in, default-off options plus an ordinary bug fix;
+  `major-task`'s "Do Not Use" list covers one-package features and ordinary
+  bugs.
+- Plan adoption: per the maintainer's reopen note, the existing branch is
+  adopted as is; the plan is added on top, history untouched.
+- TDD: the implementation predates this plan. Item (d) red/green was replayed
+  by swapping `main`'s `client.ts` in and out; the feature items are proven
+  by their tests and by the unchanged default.
+- Changeset verdict: kept unchanged. `.changeset/optimistic-auth-gate.md` is
+  the only unreleased changeset in the PR and none exists on `main`, so the
+  reuse rule is met (it is this PR's living draft). All changes are
+  non-breaking, so `patch` is the skill's level. It has separate `Features`
+  and `Patches` sections, action-verb bullets and no file paths. The HTTP
+  header bullet ("Improve ...") sits under Features because it is the part of
+  the identity guard that covers HTTP requests; the skill does not require
+  moving it.
+
+Design rationale:
+- `optimisticAuth`: removes the one socket round trip every hard load with an
+  SSR token spends before auth-bound queries subscribe. Alternatives: keep the
+  wait (status quo, the cost this removes); default-on (rejected: changes
+  behaviour for every existing app). Safety: `setAuth` sends `Authenticate`
+  before any query in the same flush and the backend orders a socket's
+  messages. The PR's probe of a self-hosted backend (convex 1.45) with a
+  garbage token, a bad-signature JWT and a revoked-session JWT: a refused
+  token gets `AuthError` and the socket is closed before the queued queries
+  are evaluated; on reconnect the query set replays under the re-established
+  auth; a revoked-session JWT authenticates and the app's own per-call check
+  refuses the queries. So the gate cannot show data the token was not
+  entitled to.
+- `onTokenIdentityChange`: a sign-in in another tab makes a refresh return a
+  token for another user or session, and Convex resumes its queued mutations
+  (with optimistic updates) under it: one account's write sent as another.
+  Alternatives: reset auth-bound queries on identity change (rejected: the
+  queued writes are already resumed); compare after caching (rejected: Convex
+  already holds the token). Chosen: refuse inside the token fetcher before
+  caching, close the client (drops queued requests), answer null afterwards,
+  and let the app reload.
+- `tokenIdentityBaseline`: an app that mounts the provider once per route group
+  remounts it within one document, often with no SSR token, so the guard
+  would re-seed from the first token it obtains, which may be another
+  identity. Alternatives: hoist one provider above all route groups (not
+  always possible with per-group layouts); module-level guard state (rejected:
+  shared across clients and tests). Chosen: the app passes the identity the
+  document already speaks for.
+- Getter and `onTokenIdentityAdmitted`: React `<Activity>` keeps a hidden
+  provider mounted with its cached token, so a value read at first render
+  cannot see that the document has moved identity. A getter is read at every
+  admission, cached tokens included; `onTokenIdentityAdmitted` lets the
+  document record an identity at the moment a token is handed out, before
+  Convex or HTTP headers receive it. Alternative: read the token store after
+  the fact (rejected: races the hand-out).
+- `optimisticUpdate`: Convex's local store is what `ConvexQueryClient` reads,
+  so Convex applies and rolls back the update against its own subscription
+  results. Alternative: TanStack `onMutate` plus `setQueryData` on Convex data
+  (rejected: overwritten by the next subscription update, hand-written
+  rollback).
+- Server logger: reuse the Convex client's logger rather than cache one server
+  client per process, which would mix requests' auth and consistent-query
+  snapshots.
+
+High-risk note:
+- Failure modes: the guard refuses a legitimate same-session refresh (false
+  trip, forced reload) or admits another identity; the HTTP header path
+  (item 3, active for every app with an auth provider) sends a different
+  token than before; `optimisticUpdate` leaks into TanStack options; the
+  logger fix breaks per-request isolation.
+- Proof: provider tests cover same-session refresh, other-identity refusal
+  (first fetch, refresh, cached token after the document moved), no caching
+  of a refused token, null after trip and callback counts; `context.test.tsx`
+  covers the guarded header token and null after a trip; the header path
+  still sends the cached token while it has 60 s or more left (the fetcher
+  answers from the same cache) and force-refreshes under 60 s, as before;
+  the hook test covers the pass-through; the interleaved A, B, A Start test
+  covers isolation.
+- Boundary: each change sits at the one owner every caller goes through.
+
+Implementation notes:
+- No product code changed. Commits on top of 424a3bec: JSDoc placement
+  (`crpc-types.ts`), test isolation (`auth-start/index.retry.test.ts`), docs
+  (`www/` and the kitcn skill), this plan.
+
+Review fixes:
+- None; review continues on the PR.
+
+Error attempts:
+| Error / failed attempt | Count | Next different move | Resolution |
+|------------------------|-------|---------------------|------------|
+| `package-entrypoints.integration.test.tsx`: Cannot find module `kitcn/auth/client` | 1 | Build the package | `bun --cwd packages/kitcn build`, rerun passes |
+| `bun check` under Bun 1.4.1: 13 failures (12 in `cli/watcher`, `cli/utils/dry-run-formatter`, `cli/commands/dev`, 1 in `reconcile auth schema`), outside the diff; the CLI files fail on `upstream/main` too (36 pass, 12 fail) | 1 | Reinstall and run with the pinned Bun 1.3.9 (`packageManager`) | Same files 48 pass, 0 fail under 1.3.9; all gates recorded under 1.3.9 |
+| `bun check` under 1.3.9: `test:bun` 1471 pass, 2 fail (`client.test.ts` contamination) | 1 | Isolate by pairing test files; report; fix at the leaking owner on ruling | `index.retry.test.ts` converted to `spyOn`; pair 15/0 |
+
+Verification evidence:
+- cwd: kitcn repo root, branch `feat/optimistic-auth-gate` at 424a3bec plus
+  this plan; Bun 1.3.9.
+- Red: `bun test packages/kitcn/src/react/client.test.ts` with `main`'s
+  `client.ts`: 13 pass, 1 fail, exit 1 (expected 0 `Math.random` calls,
+  received 1). Green with the PR's `client.ts`: 14 pass, 0 fail.
+- Focused: `convex-auth-provider.test.tsx` 46 (26 on `main`),
+  `context.test.tsx` 10 (9), `use-query-options.test.tsx` 24 (23),
+  `client.test.ts` 14 (12): 94 pass, 0 fail, exit 0.
+- `bun test packages/kitcn/src/auth-client packages/kitcn/src/react`: 197
+  pass, 0 fail, 18 files.
+- `bun --cwd packages/kitcn typecheck`: exit 0. `bun --cwd packages/kitcn
+  build`: exit 0.
+- Focused at HEAD with the fixes: the four files above plus
+  `auth-start/index.retry.test.ts`: 95 pass, 0 fail.
+- Contamination proof: `bun test packages/kitcn/src/auth-start/index.retry.test.ts
+  packages/kitcn/src/react/client.test.ts` 13 pass, 2 fail before the test fix;
+  15 pass, 0 fail after. Retry test alone: 1 pass before and after.
+- `bun lint:fix`: exit 0, 975 files, no fixes applied, source unchanged.
+- `bun check` (Bun 1.3.9, HEAD fb457e75 plus this plan): exit 1 at
+  `fixtures:check` after every earlier lane passed: `bun lint` (biome 975
+  files, eslint clean), `bun typecheck` 5/5 tasks, `test:bun` 1473 pass / 0
+  fail (154 files), `test:vitest` 1053 pass / 14 skipped (101 files passed,
+  2 skipped, no type errors), `test:cli` 124 pass / 0 fail, `test:concave`
+  "Concave smoke passed".
+- `fixtures:check` stops at `expo` (exit 1): the external Expo template now
+  writes a different `AGENTS.md` and no `CLAUDE.md`. Reproduced on
+  `upstream/main` 3250fb9c with `bun tooling/fixtures.ts check expo --backend
+  concave` (exit 1). The other seven fixtures (`expo-auth`, `next`,
+  `next-auth`, `start`, `start-auth`, `vite`, `vite-auth`), checked one by
+  one on the same code, exit 1 only on external dependency resolution in the
+  generated `package.json`: `cn` ^0.3.0 to ^0.4.0 and `lucide-react` ^1.46.0
+  to ^1.48.0 or ^1.49.0. This diff touches no scaffold; not synced here.
+- `test:verify` (run separately because `bun check` stops early): exit 0.
+- `test:runtime`: not run locally. Its `expo` scenario needs port 3210,
+  held on this machine by an unrelated local Docker Convex backend, so the
+  readiness poll of `127.0.0.1:3210/_dashboard` answers 404 and times out
+  after 60 s. Left untouched; CI owns this lane.
+- `check-complete.mjs`: `[autogoal] complete`.
+
+Source-listed case matrix:
+| Case | Source claim | Harness | Before | Expected after | Evidence | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Gate opens on held unexpired JWT before confirmation | provider test | waits | open | pass | done |
+| 2 | Gate closed without option or with expired/opaque JWT | provider test | closed | closed | pass | done |
+| 3 | Refused token closes gate, never reopens | provider test | N/A | closed | pass | done |
+| 4 | Other identity refused before cache; client closed; callback; later null | provider test | admitted | refused | pass | done |
+| 5 | Same-session refresh passes | provider test | passes | passes | pass | done |
+| 6 | HTTP headers use guarded fetcher; nothing after trip | `context.test.tsx` | cache read | guarded token | pass | done |
+| 7 | `optimisticUpdate` to `withOptimisticUpdate`, not TanStack | `use-query-options.test.tsx` | absent | passed through | pass | done |
+| 8 | Server construct and query call no `Math.random()` | `client.test.ts` | 1 call (red) | 0 calls | pass | done |
+| 9 | Interleaved Start requests keep own auth and snapshot | `client.test.ts` | pass | pass | pass | done |
+| 10 | Baseline value refuses other identity, admits same; undefined/null keep first-token behaviour | provider test | N/A | as stated | pass | done |
+| 11 | Getter read at admission; cached token refused after move | provider test | N/A | as stated | pass | done |
+| 12 | Admitted callback once per handed-out token, never refused or after trip; new callback used without new `setAuth` | provider test | N/A | as stated | pass | done |
+| 13 | New `client.test.ts` tests pass in the full suite | `index.retry.test.ts` + `client.test.ts` pair; `test:bun` | 13 pass, 2 fail | all pass | 15/0 pair; full suite in Verification evidence | done |
+| 14 | Retry test still proves the fresh-token retry | `index.retry.test.ts` alone | 1 pass | 1 pass, same assertions | 1/0 | done |
+
+Final handoff contract:
+- Commit line: JSDoc fix, test isolation fix, docs and plan commits on
+  `feat/optimistic-auth-gate` on top of 424a3bec.
+- PR line: #473 (existing, reopened).
+- Issue line: `🐛 Fixes ➖ N/A`
+- Confidence line: `🟢 92% confidence`
+- Flow table:
+  - Reproduced: server logger red (1 fail); features N/A; browser N/A
+  - Verified: 95 focused pass, full `test:bun` 1473/0, `bun check` lanes the diff can affect pass;
+    browser N/A
+- Browser check: N/A, no rendered UI.
+- Outcome: opt-in optimistic auth gate and identity guard, optimisticUpdate
+  pass-through, deterministic server construction.
+- Caveat: socket-ordering probe from the PR, not re-run; external fixture
+  drift; `test:runtime` not run locally.
+- Design:
+  - Chosen boundary: the single owner of each behaviour.
+  - Why not quick patch: per-consumer checks can be bypassed.
+  - Why not broader change: default-on auth would change every app.
+- Verified: see Verification evidence.
+- PR body verified: handed off to whoever applies the draft body.
+
+Task-style PR body contract:
+- Preserve any existing `<!-- auto-release:start -->` block. If a changeset is
+  part of the diff and repo policy expects auto release, include that block.
+- Use the accepted PR #270 visual format. The body starts with an emoji
+  issue/fix line, for example `🐛 Fixes #123` or `🐛 Fixes ➖ N/A`, then
+  `🧭 Task plan: docs/plans/<plan>.md`, then an emoji confidence line like
+  `🟢 95-100% confidence`.
+- Use this exact table header: `| Phase | 🧪 Tests | 🌐 Browser |`.
+- Use `Reproduced` and `Verified` rows. Mark passing proof with `🟢`, repro or
+  failing proof with `🔴`, and non-applicable cells with `➖ N/A`.
+- Use bold emoji section headings: `**✅ Outcome**`, `**⚠️ Caveat**`,
+  `**🏗️ Design**`, and `**🧪 Verified**`.
+- Never include a line that links to the current PR itself.
+
+Final handoff / sync:
+- Commit: four local commits on `feat/optimistic-auth-gate`.
+- PR: #473.
+- Issue: N/A.
+- Browser proof: N/A.
+- Caveats: probe carried over; fixture drift external; `test:runtime` not
+  run locally.
+
+Timeline:
+- 2026-09-27 PR #473 opened with 07b5927f; 8f756193 and 424a3bec follow.
+- 2026-09-29T21:54Z autoclosure comment and close; 22:11Z reopened with the
+  adoption note.
+- 2026-09-30 Plan created and adopted onto the branch; red/green replayed;
+  focused tests, typecheck, build pass.
+- 2026-09-30 `bun check` found the `client.test.ts` contamination; reported;
+  on the requester's ruling fixed in `index.retry.test.ts` with `spyOn`.
+  JSDoc placement fixed; docs added; `bun lint:fix` and `bun check` rerun.
+
+Reboot status:
+| Question | Answer |
+|----------|--------|
+| Where am I? | Closeout, plan committed locally |
+| Where am I going? | Requester pushes and updates the PR body; review continues |
+| What is the goal? | Per-PR task evidence and proof for #473 |
+| What have I learned? | See Findings |
+| What have I done? | See Timeline |
+
+Open risks:
+- The socket-ordering premise rests on the PR's probe of a self-hosted
+  backend (convex 1.45); not re-run.
+- `fixtures:check` fails on `main` too from external drift (`cn`,
+  `lucide-react` ranges, Expo template); CI will report it until `main` is
+  resynced.
+- `test:runtime` (auth scenarios included) did not run on this machine; CI
+  should cover it.
+- Other `mock.module` calls remain in the package (none on modules
+  `react/client.ts` imports); they can still contaminate other files.
+
+Hard closeout guard:
+- A local-only final response for verified code-changing work is invalid unless
+  this plan records an explicit user decline, no local patch, analytical/
+  blocked/inconclusive outcome, or a real commit/PR blocker. Recorded: the PR
+  exists and the requester reserved the push of this plan commit.
