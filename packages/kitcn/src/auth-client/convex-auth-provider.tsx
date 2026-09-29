@@ -94,12 +94,13 @@ export type ConvexAuthProviderProps = {
   isUnauthorized?: (error: unknown) => boolean;
   /**
    * Run auth-bound queries as soon as an unexpired JWT is held instead of
-   * after Convex confirms it. Convex sends them after Authenticate on the same
-   * socket and evaluates none of them if the token is refused; a refused token
-   * sets `isAuthenticated` back to false, which resets auth-bound queries, and
-   * no token Convex refused opens the gate again, including those Convex tried
-   * in its own retries. With the identity guard, only a token the guard admits
-   * opens it. Default `false`.
+   * after Convex confirms it, until the Convex client reports its first auth
+   * result (confirmed or refused); after that the gate follows Convex's
+   * confirmed state for the client's lifetime, remounts included. Convex
+   * sends them after Authenticate on the same socket and evaluates none of
+   * them if the token is refused; a refused token sets `isAuthenticated` back
+   * to false, which resets auth-bound queries. With the identity guard, only
+   * a token the guard admits opens it. Default `false`.
    */
   optimisticAuth?: boolean;
   /**
@@ -113,8 +114,10 @@ export type ConvexAuthProviderProps = {
    * resets auth-bound queries), every later token request answers null,
    * `client.close()` is called (Convex's close semantics govern its queued
    * work), and then this is called, typically to reload the page. The trip is
-   * terminal for the document: a later provider over the same client starts
-   * tripped, and sign-in mutations publish nothing to a tripped provider.
+   * terminal for the document (browser only): every mounted provider
+   * publishes unauthenticated and hands out no token, later providers and
+   * clients start tripped, and sign-in mutations throw `AuthMutationError`
+   * code `TOKEN_IDENTITY_CHANGED`. A reload clears it.
    * While an identity is established, a persisted session token is restored
    * only if it is a JWT for that identity. It governs the token kitcn
    * supplies, not an `Authorization` header the app sets itself.
