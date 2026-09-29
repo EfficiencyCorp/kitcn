@@ -185,11 +185,15 @@ Current verdict:
 - verdict: ready for delta review of fix round 1
 - confidence: 90%
 - next owner: requester (delta review, push, PR body), then maintainer review
-- reason: every acceptance criterion and every accepted review finding has a
-  red-then-green focused test, and every gate lane the diff can affect
-  passes; the socket-ordering premise rests on the #473 probe, disposal of
-  queued work is Convex's `close()` semantics (not re-proved), `test:runtime`
-  could not run on this machine, and autoreview is blocked.
+- reason: every runtime acceptance criterion and every accepted runtime
+  review finding (round 1 F1-F6, round 2 R1-R5) has a behavioural focused
+  test that failed before its fix and passes after it; control tests (for
+  example the baseline identity still opening the gate) pass before and
+  after by design. F7's spy cleanup, F8-F11 and R6-R7 are structural or
+  document audits, not behavioural tests. Every gate lane the diff can
+  affect passes; the socket-ordering premise rests on the #473 probe,
+  disposal of queued work is Convex's `close()` semantics (not re-proved),
+  `test:runtime` could not run on this machine, and autoreview is blocked.
 
 Implementation readiness:
 - verdict: ready (implementation exists; plan adopted)
@@ -389,7 +393,7 @@ Completion Gates:
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Recorded above |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | (d) reproduced by unit test; other rungs N/A with reason |
 | Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | `client.test.ts` with `main`'s `client.ts`: 13 pass, 1 fail, exit 1 |
-| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 106 pass, 0 fail across the 5 touched test files after fix round 1 (94 across 4 files before it) |
+| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 126 pass, 0 fail across the 7 touched test files after fix round 2 (106 after round 1, 94 before it) |
 | TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` exit 0 |
 | Package exports or file layout changed | yes | Run the relevant package build before final verification and keep generated updates | `bun --cwd packages/kitcn build` exit 0; no generated updates |
 | Package manifests, lockfile, or install graph changed | no | Run `bun install` and relevant package checks | N/A: no manifest or lockfile change |
@@ -405,7 +409,7 @@ Completion Gates:
 | High-risk mini gate | yes | For public API/runtime/package-boundary/browser/agent-action/command-contract changes, record realistic failure mode, proof plan, and why the chosen boundary is right; otherwise N/A | See High-risk note |
 | Agent-native review for agent/tooling changes | yes | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | Loaded and run; verdict PASS, no findings (see Agent-native review) |
 | Local install corruption suspected | yes | Run `bun install` once, rerun the exact failing command, or record N/A | Reinstalled with the pinned Bun 1.3.9; the Bun 1.4.1 failures do not reproduce (see Error attempts) |
-| Commit created | yes | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | On top of 424a3bec: JSDoc fix, test isolation fix, docs, plan; fix round 1: runtime fixes, test hygiene, docs, plan |
+| Commit created | yes | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | On top of 424a3bec: JSDoc fix, test isolation fix, docs, plan; fix round 1: runtime fixes, test hygiene, docs, plan; fix round 2: three runtime fix commits, docs, plan |
 | PR create or update | handed-off | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | PR #473 exists; `bun check` run (exit 1 on the pre-existing fixture drift only); push and body application reserved by the requester, pending |
 | Task-style PR body verified | handed-off | Verify the PR body with `gh pr view --json body`; it must preserve auto-release blocks when applicable, must not include a current-PR self-link, and must use the PR #270 emoji format: `🐛 Fixes ...`, `🟢 95-100% confidence`, `Phase / 🧪 Tests / 🌐 Browser` table, and bold emoji Outcome/Caveat/Design/Verified sections | Pending: replacement body drafted locally; `gh pr view 473 --json body` read-back after the requester applies it |
 | PR task evidence verified | handed-off | Verify body plan line, plan at PR head, and exact PR ownership | Pending: draft body has one plan line and this plan names #473; live check of the plan at the pushed head after the requester pushes |
@@ -443,7 +447,8 @@ Phase / pass table:
 | Reproduction | done | Item (d) red: 13 pass, 1 fail | verification |
 | Implementation | done | Predates the plan (07b5927f, 8f756193, 424a3bec); unchanged. Added: JSDoc fix, test isolation fix, docs | verification |
 | Verification | done | Focused tests, typecheck, build, lint:fix, bun check (see evidence) | closeout |
-| Review fix round 1 | done | F1-F11 dispositioned; red then green per finding | delta review |
+| Review fix round 1 | done | F1-F11 dispositioned; F1-F6 behavioural red then green; F7 act warnings measured (46 to 0) and spy cleanup a structural fix; F8-F11 document and workflow audits | delta review |
+| Review fix round 2 | done | R1-R5 behavioural red then green (R4 also green on the pre-round-1 parent); R6-R7 document audits; two items declined with rationale | delta review |
 | Commit / PR / GitHub sync | handed-off | Commits local; push, body application and live read-back reserved by the requester | requester |
 | Closeout | blocked | Pre-existing `fixtures:check` drift; autoreview needs TruffleHog; `test:runtime` not run locally | requester |
 
@@ -579,15 +584,27 @@ Agent-native review:
   current behaviour.
 
 Implementation notes:
-- No product code changed. Commits on top of 424a3bec: JSDoc placement
-  (`crpc-types.ts`), test isolation (`auth-start/index.retry.test.ts`), docs
-  (`www/` and the kitcn skill), this plan.
+- 2026-09-30, first pass (historical, up to 01a55371): no product code
+  changed; commits on top of 424a3bec were the JSDoc placement
+  (`crpc-types.ts`), test isolation (`auth-start/index.retry.test.ts`),
+  docs (`www/` and the kitcn skill) and this plan.
+- Fix round 1 (7ad73f51 to 9ed1e1a0) changed product code in
+  `auth-client/convex-auth-provider.tsx`.
+- Fix round 2 (3062d9ac to a9b24afa) changed product code in
+  `auth-client/convex-auth-provider.tsx`, added
+  `auth-client/token-refusals.ts` and `react/identity-guard-trip.ts`, and
+  changed `react/auth-mutations.ts` (sign-in on a tripped store).
 
 Review fixes:
 - Round 1 (three Codex review lanes on `upstream/main..01a55371`: standards,
-  spec, adversarial; requester triage). Red evidence: 9 of 10 new tests
-  failing against 01a55371 for the intended reasons, plus the seeded-token
-  gate case (red: `isAuthenticated` true); green after the fix commits.
+  spec, adversarial; requester triage). Proof type per item: F1-F6
+  behavioural tests, red against 01a55371 for the intended reasons (9 of 10
+  in one run plus the seeded-token case separately) and green after; the
+  one test that passed in the red run, `a held SSR token of the baseline
+  identity still opens the optimistic gate`, is a control that passes
+  before and after by design. F7: act wrapping measured (46 warning lines
+  to 0); spy cleanup in `finally` is a structural fix that a passing run
+  cannot detect. F8-F11: document and workflow audits.
   - F1 fixed: SSR token admitted before it is published (withheld and the
     guard tripped when refused); a persisted session token is not restored
     while an identity is established; the optimistic gate opens only for a
@@ -596,7 +613,8 @@ Review fixes:
     SSR token of the baseline identity still opens the optimistic gate`, `a
     token seeded into the store opens the optimistic gate only if the guard
     would admit it`, `a persisted session token is not restored while an
-    identity is established`.
+    identity is established` (renamed in round 2 to `an opaque persisted
+    session token is not restored while an identity is established`).
   - F2 fixed: a fresh token is admitted, announced and cached in one step.
     Test: `concurrent first tokens: the losing identity is never cached`.
   - F3 fixed: a trip clears the token and publishes `isAuthenticated: false,
@@ -637,6 +655,53 @@ Review fixes:
     before the PR and outside the guard's contract; one docs sentence says
     so.
 
+- Round 2 (two Codex verification lanes on round 1: auth runtime and the
+  rest; requester triage). F1, F2, F5, F6 and F7 verified by the lanes.
+  - R1 fixed (980beef5), behavioural: every token handed to Convex since
+    its last confirmation is pending and a refusal moves all of them into
+    the refused set, so a refusal hidden behind Convex's transparent retry
+    (refuse A, SDK refetches and sends B, refuse B, one `onChange(false)`)
+    covers A too. Test `refusals hidden behind the SDK's transparent retry
+    are all remembered` runs through Convex's own `AuthenticationManager`;
+    red at 9ed1e1a0 on the final assertion (A reopened the gate).
+  - R2 fixed (3062d9ac), behavioural: a trip is recorded per Convex client
+    and per auth store (`react/identity-guard-trip.ts`); a later provider
+    over a tripped client starts tripped without re-running the callback or
+    `close()`; sign-in mutations publish nothing to a tripped store. Tests
+    `a later provider over a tripped client starts tripped` and `a sign-in
+    after a trip publishes neither a token nor authenticated`, both red at
+    9ed1e1a0.
+  - R3 fixed (3062d9ac), behavioural: the hydration fallback writes nothing
+    back after a trip. Test `nothing writes a token back after a trip, not
+    even the hydration fallback`, red at 9ed1e1a0 (token A written back).
+  - R4 fixed (371bfb48), behavioural: while an identity is established, a
+    persisted JWT for the same user and session is restored; another
+    identity's JWT and opaque credentials are not. Test `a persisted JWT of
+    the established identity is restored` was red at 980beef5 and passes on the pre-round-1 provider (01a55371), as it does
+    again now; `a persisted JWT of another identity is not restored` and
+    `an opaque persisted session token is not restored while an identity is
+    established` fail on 01a55371 and pass now.
+  - R5 fixed (980beef5), behavioural unit tests: `TokenRefusals` prunes
+    expired entries on every insert and keeps at most 16, oldest out
+    (`token-refusals.test.ts`, red before the module existed).
+  - R6 fixed (a9b24afa), document audit: "while an identity is established"
+    in `client.mdx`; changeset states an identity-less first JWT
+    establishes nothing; docs, JSDoc, skill mirrors and changeset describe
+    the per-client terminal trip, the restore rules and retry refusals.
+  - R7 fixed (this commit), document audit: proof types distinguished per
+    item, historical snapshots labelled, the stale "No product code
+    changed" dated.
+  - Declined, all-options-off equivalence for HTTP headers: item 3
+    deliberately routes cRPC HTTP headers through the provider's fetcher for
+    every auth provider, not only when the new props are set, so the
+    identity guard and any future fetcher policy cover HTTP. With no guard
+    the fetcher answers from the same 60 s cache as before. The body's What
+    3 and Design say this is unconditional.
+  - Declined, removing rollback wording: kept, but every mention (mutations
+    page, API table, skill mirrors, changeset, body) now attributes applying
+    and rolling back the update to Convex's `withOptimisticUpdate`
+    semantics; the test proves forwarding only.
+
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
 |------------------------|-------|---------------------|------------|
@@ -645,8 +710,8 @@ Error attempts:
 | `bun check` under 1.3.9: `test:bun` 1471 pass, 2 fail (`client.test.ts` contamination) | 1 | Isolate by pairing test files; report; fix at the leaking owner on ruling | `index.retry.test.ts` converted to `spyOn`; pair 15/0 |
 
 Verification evidence:
-- cwd: kitcn repo root, branch `feat/optimistic-auth-gate` at 424a3bec plus
-  this plan; Bun 1.3.9.
+- Historical snapshot, first pass (up to 01a55371). cwd: kitcn repo root,
+  branch `feat/optimistic-auth-gate`; Bun 1.3.9.
 - Red: `bun test packages/kitcn/src/react/client.test.ts` with `main`'s
   `client.ts`: 13 pass, 1 fail, exit 1 (expected 0 `Math.random` calls,
   received 1). Green with the PR's `client.ts`: 14 pass, 0 fail.
@@ -678,7 +743,7 @@ Verification evidence:
   generated `package.json`: `cn` ^0.3.0 to ^0.4.0 and `lucide-react` ^1.46.0
   to ^1.48.0 or ^1.49.0. This diff touches no scaffold; not synced here.
 - `test:verify` (run separately because `bun check` stops early): exit 0.
-- Fix round 1 (Bun 1.3.9, HEAD 9b3d4886 plus this plan):
+- Historical snapshot, fix round 1 (Bun 1.3.9, HEAD 9b3d4886 plus this plan):
   - Red against 01a55371: the 10 new provider tests gave 1 pass, 9 fail
     (log kept at `kitcn-1596-bodies/round1-red.log` outside the repo); the
     seeded-token case failed separately (`isAuthenticated` true).
@@ -694,6 +759,28 @@ Verification evidence:
   - `test:verify`: exit 0.
   - `autoreview --mode branch --base upstream/main`: exit 1, TruffleHog not
     installed (blocked, needs a human).
+- Fix round 2 (current; Bun 1.3.9, HEAD a9b24afa plus this plan):
+  - Red logs kept outside the repo in `kitcn-1596-bodies/round2-redA.log`
+    (R2, R3: 0 pass, 3 fail at 9ed1e1a0), `round2-redB.log` (R1 red on the
+    final assertion; R5 module missing), `round2-redC.log` (R4: matching JWT
+    red at 980beef5; on 01a55371 it passes while the other two fail).
+  - `bun --cwd packages/kitcn build`: exit 0.
+  - Focused (`convex-auth-provider.test.tsx` 63, `token-refusals.test.ts`
+    3, `auth-mutations.test.tsx` 11, `context.test.tsx` 10,
+    `use-query-options.test.tsx` 24, `client.test.ts` 14,
+    `index.retry.test.ts` 1): 126 pass, 0 fail, exit 0, 0 `act` warnings.
+  - `bun lint:fix`: exit 0, 978 files, no fixes applied, source unchanged.
+  - `bun check`: exit 1 at `fixtures:check` (same `expo` drift: `AGENTS.md`,
+    `CLAUDE.md`) after every earlier lane passed: lint (biome 978 files,
+    eslint), typecheck 5/5, `test:bun` 1493 pass / 0 fail (155 files),
+    `test:vitest` 1053 pass / 14 skipped, no type errors, `test:cli` 124
+    pass / 0 fail, `test:concave` "Concave smoke passed".
+  - `test:verify`: exit 0.
+  - Docs: both edited MDX pages compile with `@mdx-js/mdx`; skill mirror
+    synced; `intent:validate` "all passed", `intent:stale` "All skills
+    up-to-date".
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
 - `test:runtime`: not run locally. Its `expo` scenario needs port 3210,
   held on this machine by an unrelated local Docker Convex backend, so the
   readiness poll of `127.0.0.1:3210/_dashboard` answers 404 and times out
@@ -723,6 +810,11 @@ Source-listed case matrix:
 | 18 | Trip publishes terminal unauthenticated; Convex cannot reopen | provider test (F3) | stays authenticated (red) | `isAuthenticated` false, `isLoading` false, token null | pass | done |
 | 19 | Throwing callback still closes the client | provider test (F5) | close 0 (red) | close 1 | pass | done |
 | 20 | Identity-less JWT refused once an identity exists; announced without setting one before | provider tests (F6) | handed out, not announced (red) | as stated | pass | done |
+| 21 | Refusal hidden behind Convex's transparent retry covers every token tried | provider test through `AuthenticationManager` (R1) | A reopened the gate (red) | closed | pass | done |
+| 22 | Trip terminal per client and store: remount starts tripped; sign-in publishes nothing | provider tests (R2) | gate reopened; `[token, true]` published (red) | stays unauthenticated | pass | done |
+| 23 | Nothing writes a token back after a trip | provider test (R3) | A written back (red) | null | pass | done |
+| 24 | Matching persisted JWT restored; other identity and opaque not | provider tests (R4) | matching not restored at 980beef5 (red); green on 01a55371 | as stated | pass | done |
+| 25 | Refusal memory pruned and bounded | `token-refusals.test.ts` (R5) | no module (red) | expired pruned, 16 max | pass | done |
 
 Final handoff contract:
 - Commit line: JSDoc fix, test isolation fix, docs and plan commits, then
@@ -733,7 +825,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: server logger red (1 fail); features N/A; browser N/A
-  - Verified: 106 focused pass, full `test:bun` 1484/0, `bun check` lanes
+  - Verified: 126 focused pass, full `test:bun` 1493/0, `bun check` lanes
     the diff can affect pass (stops at pre-existing fixture drift); browser
     N/A
 - Browser check: N/A, no rendered UI.
@@ -764,8 +856,8 @@ Task-style PR body contract:
 - Never include a line that links to the current PR itself.
 
 Final handoff / sync:
-- Commit: eight local commits on `feat/optimistic-auth-gate` (four before
-  review, four in fix round 1).
+- Commit: thirteen local commits on `feat/optimistic-auth-gate` (four
+  before review, four in fix round 1, five in fix round 2).
 - PR: #473.
 - Issue: N/A.
 - Browser proof: N/A.
@@ -782,14 +874,18 @@ Timeline:
 - 2026-09-30 `bun check` found the `client.test.ts` contamination; reported;
   on the requester's ruling fixed in `index.retry.test.ts` with `spyOn`.
   JSDoc placement fixed; docs added; `bun lint:fix` and `bun check` rerun.
-- 2026-09-30 Fix round 1: three Codex review lanes; F1-F11 fixed red then
-  green, adversarial 5 declined by the requester; packs applied; gates
+- 2026-09-30 Fix round 1: three Codex review lanes; F1-F6 fixed with
+  behavioural red then green, F7-F11 fixed (structural and document
+  audits), adversarial 5 declined by the requester; packs applied; gates
   rerun; closeout recorded as blocked.
+- 2026-09-30 Fix round 2: two verification lanes; R1-R5 fixed with
+  behavioural red then green, R6-R7 document audits, two items declined
+  with rationale; gates rerun.
 
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Closeout blocked on the pre-existing fixture drift and autoreview; fix round 1 committed locally |
+| Where am I? | Closeout blocked on the pre-existing fixture drift and autoreview; fix rounds 1 and 2 committed locally |
 | Where am I going? | Requester delta review, push, PR body application, live read-back; maintainer review |
 | What is the goal? | Per-PR task evidence and proof for #473 |
 | What have I learned? | See Findings |
@@ -806,10 +902,12 @@ Open risks:
 - Other `mock.module` calls remain in the package (none on modules
   `react/client.ts` imports); they can still contaminate other files.
 - Autoreview has not run (TruffleHog missing locally).
-- Restoring a persisted session token is skipped while an identity is
-  established; an app relying on that restore across remounts with a
-  baseline sees no restore on those remounts (the Better Auth session path
-  is unaffected).
+- While an identity is established, only a persisted JWT for that identity
+  is restored; an opaque persisted credential is not (the Better Auth
+  session path is unaffected). Round 2 restored same-identity JWT
+  continuity (R4).
+- Trip state lives in module-level WeakSets keyed by the Convex client and
+  the auth store; it lasts for the document's lifetime by design.
 
 Hard closeout guard:
 - A local-only final response for verified code-changing work is invalid unless
