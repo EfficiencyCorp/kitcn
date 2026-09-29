@@ -92,18 +92,23 @@ export type ConvexAuthProviderProps = {
    * after Convex confirms it. Convex sends them after Authenticate on the same
    * socket and evaluates none of them if the token is refused; a refused token
    * sets `isAuthenticated` back to false, which resets auth-bound queries, and
-   * never opens the gate again. Default `false`.
+   * no token Convex refused opens the gate again. With the identity guard, only
+   * a token the guard admits opens it. Default `false`.
    */
   optimisticAuth?: boolean;
   /**
    * Fix the identity (JWT `sub` and `sessionId`) the document speaks for: the
-   * one it holds when it mounts (`initialToken`), or, with none, the first
-   * token it obtains. A token for another user or session is refused before
-   * it is cached, so neither Convex, the optimistic gate nor HTTP headers ever
-   * see it: the Convex client is closed (dropping queued requests and
-   * optimistic updates), every later token request answers null, and this is
-   * called, typically to reload the page. Same-session refreshes pass
-   * through. Off when not set.
+   * one it holds when it mounts (`initialToken`, admitted before it is
+   * published), or, with none, the first token that carries one. A token for
+   * another user or session, or a JWT without an identity once one is
+   * established, is refused before it is cached, so neither Convex, the
+   * optimistic gate nor HTTP headers ever see it. Refusing trips the guard for
+   * good: the token is cleared and the store publishes unauthenticated (which
+   * resets auth-bound queries), every later token request answers null,
+   * `client.close()` is called (Convex's close semantics govern its queued
+   * work), and then this is called, typically to reload the page. It governs
+   * the token kitcn supplies, not an `Authorization` header the app sets
+   * itself. Same-session refreshes pass through. Off when not set.
    */
   onTokenIdentityChange?: () => void;
   /**
@@ -124,11 +129,12 @@ export type ConvexAuthProviderProps = {
    */
   tokenIdentityBaseline?: string | null | (() => string | null);
   /**
-   * Called synchronously with every token the identity guard admits as it is
-   * handed to Convex or HTTP headers, cached tokens included, so the document
-   * can claim the identity at that moment (for example the first token a
-   * document without one obtains). Never called for a refused token. Read
-   * from a ref, so passing a new function does not re-run effects. Needs
+   * Called synchronously with every token the identity guard admits, before
+   * Convex or HTTP headers receive it: a fresh token when it is admitted and
+   * cached, a cached token each time it is handed out. The document can claim
+   * the identity at that moment (for example the first token a document
+   * without one obtains). Never called for a refused token. Read from a ref,
+   * so passing a new function does not re-run effects. Needs
    * `onTokenIdentityChange`.
    */
   onTokenIdentityAdmitted?: (token: string) => void;
