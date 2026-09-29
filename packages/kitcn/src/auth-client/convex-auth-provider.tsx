@@ -98,8 +98,9 @@ export type ConvexAuthProviderProps = {
    * after Convex confirms it. Convex sends them after Authenticate on the same
    * socket and evaluates none of them if the token is refused; a refused token
    * sets `isAuthenticated` back to false, which resets auth-bound queries, and
-   * no token Convex refused opens the gate again. With the identity guard, only
-   * a token the guard admits opens it. Default `false`.
+   * no token Convex refused opens the gate again, including those Convex tried
+   * in its own retries. With the identity guard, only a token the guard admits
+   * opens it. Default `false`.
    */
   optimisticAuth?: boolean;
   /**
@@ -112,9 +113,13 @@ export type ConvexAuthProviderProps = {
    * good: the token is cleared and the store publishes unauthenticated (which
    * resets auth-bound queries), every later token request answers null,
    * `client.close()` is called (Convex's close semantics govern its queued
-   * work), and then this is called, typically to reload the page. It governs
-   * the token kitcn supplies, not an `Authorization` header the app sets
-   * itself. Same-session refreshes pass through. Off when not set.
+   * work), and then this is called, typically to reload the page. The trip is
+   * terminal for the document: a later provider over the same client starts
+   * tripped, and sign-in mutations publish nothing to a tripped provider.
+   * While an identity is established, a persisted session token is restored
+   * only if it is a JWT for that identity. It governs the token kitcn
+   * supplies, not an `Authorization` header the app sets itself.
+   * Same-session refreshes pass through. Off when not set.
    */
   onTokenIdentityChange?: () => void;
   /**

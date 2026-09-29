@@ -122,7 +122,7 @@ deleteSession.mutate(
 
 ### Optimistic Updates
 
-Pass `optimisticUpdate` to use Convex's native optimistic updates: cRPC forwards it to Convex's `withOptimisticUpdate`. Convex applies it to its local query store, which cRPC queries read, and owns the rollback when the mutation fails:
+Pass `optimisticUpdate` to use Convex's native optimistic updates: cRPC forwards it to Convex's `withOptimisticUpdate` and keeps it out of the TanStack options. Applying the update to Convex's local query store (which cRPC queries read) and rolling it back when the mutation fails follow Convex's optimistic update semantics:
 
 ```tsx showLineNumbers {1,5-9}
 import { api } from '@convex/api';
@@ -196,4 +196,4 @@ kitcn adds one Convex option:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `optimisticUpdate` | `(localStore, args) => void` | Forwarded to Convex's `withOptimisticUpdate`; Convex applies and rolls it back ([Optimistic Updates](#optimistic-updates)) |
+| `optimisticUpdate` | `(localStore, args) => void` | Forwarded to Convex's `withOptimisticUpdate`; application and rollback follow Convex's semantics ([Optimistic Updates](#optimistic-updates)) |
