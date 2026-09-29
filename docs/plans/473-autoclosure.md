@@ -34,16 +34,18 @@ Completion threshold:
 - PR #473 has exactly one task-plan line. The linked task plan exists at the
   live head and names PR #473.
 - Every linked-plan and closure-matrix gate is complete or N/A with evidence.
-- Focused package tests, the `packages/kitcn` build, `bun lint:fix`, and
-  `bun check` pass on the final committed head.
+- Focused package tests, the `packages/kitcn` build, and lint pass on the final
+  committed head. Every applicable `bun check` lane passes; the unrelated
+  moving Expo fixture lane has the user's exact waiver recorded below.
 - The final feedback inventory has zero actionable P1-or-higher items. Every
   lower-priority item has an explicit user deferral or a concrete non-actionable
   verdict.
 - The terminal receipt binds its proof to the exact live head. A guarded merge
   lands that head in `main`, and GitHub reports the PR as merged.
 - No new product scope. Completion requires every applicable lane below to have
-  fresh evidence, `bun check` passing, review findings closed, authorized
-  GitHub delivery complete, and the goal checker passing.
+  fresh evidence, the exact unrelated fixture waiver, review findings closed,
+  required GitHub `CI` passing, authorized delivery complete, and the goal
+  checker passing. A local fixture waiver cannot satisfy branch protection.
 
 Verification surface:
 - Immutable-head and local `HEAD` equality checks for PR #473.
@@ -93,7 +95,7 @@ Start Gates:
 | Closure matrix classified | yes | Package/API, changeset, source behavior, feedback, review, repository check, and GitHub delivery apply; fixtures, UI, and agent workflow are currently N/A |
 | Live PR feedback target resolved | yes | PR #473 at recovered head `29f558fbfd5ff37222d30d006a9fbee24744e9a1` |
 | Feedback proof checkout bound to PR head | yes | Local `HEAD`, fetched PR ref, and live OID matched before feedback review |
-| Unfiltered feedback inventory | conditional | Recovery is complete; refresh every feedback surface next |
+| Unfiltered feedback inventory | yes | Helper, raw REST, and paginated GraphQL inventories were fetched twice; zero actionable items exist |
 | GitHub delivery expectation recorded | yes | Recover exact-PR evidence, push to `EfficiencyCorp:feat/optimistic-auth-gate`, verify, then merge only with an exact-head guard |
 | Active goal checked or created | yes | Active goal points to this plan and names the task-evidence, feedback, proof, check, merge, and receipt threshold |
 | Agent-native pack selected | yes | Required by the autoclosure goal contract |
@@ -108,18 +110,18 @@ Closure matrix:
 | task intake classification | yes | immutable-head `recoverable` evidence | complete |
 | per-PR task ownership | yes | recovered exact PR + dedicated task plan | complete |
 | recoverable task adoption | yes | preserved branch + exact-PR `task` + repaired evidence read-back | complete |
-| absent-state close | conditional | exact missing-state comment + `CLOSED` read-back | pending |
-| source behavior | pending | pending | pending |
-| package/API/build | pending | pending | pending |
-| generated output | pending | pending | pending |
-| fixtures/scenarios | pending | pending | pending |
-| docs/package skill | pending | pending | pending |
-| changeset | pending | pending | pending |
-| agent workflow | pending | pending | pending |
-| live PR feedback | conditional | complete/recovered: `resolve-pr-feedback` + final P1 read-back; absent: N/A with comment/CLOSED receipts | pending |
-| cleanup/review | pending | pending | pending |
-| repository check | yes | `bun check` | pending |
-| GitHub delivery | pending | pending | pending |
+| absent-state close | no | N/A: PR is recoverable, so the corrected workflow preserves it | complete |
+| source behavior | yes | 97 focused tests plus direct source review | complete |
+| package/API/build | yes | package typecheck/build and public type coverage | complete |
+| generated output | yes | published skill mirror regenerated from package skill source | complete |
+| fixtures/scenarios | no | N/A: no scaffold source changed; unrelated Expo drift explicitly waived | complete |
+| docs/package skill | yes | `www` and package skill references synchronized | complete |
+| changeset | yes | `.changeset/optimistic-auth-gate.md`; fixed package group audited | complete |
+| agent workflow | no | N/A: no workflow action or rule changed | complete |
+| live PR feedback | yes | helper + raw REST + paginated GraphQL; zero actionable P0-P3 | complete |
+| cleanup/review | yes | no-comments, direct P1 audit, agent-native boundary audit, autoreview clean | complete |
+| repository check | yes | all owning lanes pass; required GitHub `CI` still fails on the unrelated Expo SDK 55 fixture drift | blocked |
+| GitHub delivery | yes | material head pushed/read; exact-head receipt and merge must wait for required `CI` plus code-owner approval | blocked |
 
 Work Checklist:
 - [x] **Declare the mode and resolve the forge before any poll.** Mode is
@@ -130,93 +132,99 @@ Work Checklist:
       this PR in the current chat.
 - [x] **Never mutate stack topology.** This run preserves `main` as the base
       and `feat/optimistic-auth-gate` as the contributor head.
-- [ ] **Order is conflicts, then review threads, then CI.** Run after exact-PR
-      evidence reaches the live head.
-- [ ] **Trust the active forge's verdict, not a green check list.** Use the
-      GitHub watcher after recovery.
-- [ ] **Classify CI before any retrigger.** No retry has been requested.
-- [ ] **Bugbot is triaged skeptically, always.** No Bugbot item is known yet.
-- [ ] **Stop at the human's line.** The user authorized autoclosure and merge,
+- [x] **Order is conflicts, then review threads, then CI.** Exact-PR evidence
+      reached the live head before review; CI follows the final plan push.
+- [x] **Trust the active forge's verdict, not a green check list.** GitHub's
+      ruleset remains authoritative for final approval and CI.
+- [x] **Classify CI before any retrigger.** The fork run was `action_required`,
+      not failed; normal workflow approval was issued without bypass.
+- [x] **Bugbot is triaged skeptically, always.** No Bugbot item exists.
+- [x] **Stop at the human's line.** The user authorized autoclosure and merge,
       but no scope expansion or protection bypass.
 - [x] **Resolve the forge and dependency chain.** GitHub is the forge. PR #473
       is a single PR from `EfficiencyCorp:feat/optimistic-auth-gate` to `main`.
-- [ ] **Verify each PR independently.** The current agent did not author the
+- [x] **Verify each PR independently.** The current agent did not author the
       contributor's code and will issue the verdict directly. A higher-priority
       runtime rule forbids spawning the playbook's verifier subagent.
-- [ ] **Find the contiguous verified run.** The run contains only PR #473.
-- [ ] **Cancel pending merges before changing the chain.** Inspect before any
+- [x] **Find the contiguous verified run.** The run contains only PR #473.
+- [x] **Cancel pending merges before changing the chain.** No pending merge or
       topology write. No topology write is planned.
-- [ ] **Prepare only the bottom PR.** PR #473 is the bottom and only PR.
-- [ ] **Reassess the evidence.** Bind review and tests to the final head and
-      base OID.
-- [ ] **Merge with a service-enforced head condition.** Use GitHub's
+- [x] **Prepare only the bottom PR.** PR #473 is the bottom and only PR.
+- [x] **Reassess the evidence.** Review and tests bind to final material head
+      `ea5e442d...` and base OID `3250fb9c...`.
+- [ ] **Merge with a service-enforced head condition.** Once required `CI` and
+      review pass, the external closeout
+      uses GitHub's
       `--match-head-commit` guard after every gate passes.
-- [ ] **Arm future merging only with durable verification gates.** Skip future
+- [x] **Arm future merging only with durable verification gates.** Skip future
       arming. This run will use an immediate guarded merge.
-- [ ] **Watch the frontier and preserve its verdict.** Rearm after each push.
-- [ ] **Confirm the landing before advancing.** Read the merged state and
-      confirm the merge commit is in fetched `main`.
-- [ ] **Stop at the ceiling.** The ceiling is PR #473.
-- [ ] Every PR has its own `task` invocation and dedicated task plan; a batch
+- [x] **Watch the frontier and preserve its verdict.** GitHub CI was authorized,
+      watched, and classified as a real required-context failure caused only by
+      the unrelated fixture drift.
+- [ ] **Confirm the landing before advancing.** The external closeout must read
+      `MERGED` and prove the merge commit is in fetched `main`.
+- [x] **Stop at the ceiling.** The ceiling is PR #473.
+- [x] Every PR has its own `task` invocation and dedicated task plan; a batch
       plan or aggregate autoclosure is not used as a substitute.
-- [ ] Bounded intake classified immutable-head task state as `complete`,
+- [x] Bounded intake classified immutable-head task state as `complete`,
       `recoverable`, or `absent` from source-backed intent plus delta coherence;
       incomplete evidence alone was not classified as absent.
-- [ ] Recoverable work was preserved and adopted through `task` for the exact
+- [x] Recoverable work was preserved and adopted through `task` for the exact
       PR; its dedicated plan/body evidence was committed, pushed, and read back
       at the new head before normal closeout continued.
-- [ ] Complete or recovered task evidence was verified from the PR body,
+- [x] Complete or recovered task evidence was verified from the PR body,
       fetched head, and exact PR ownership. Absent state instead has the exact
       missing-state comment and `CLOSED` read-back, and no full review, merge,
       or release work continued.
-- [ ] Intended behavior and exclusions are reconstructed from real sources.
-- [ ] Each lane is proven or N/A with a concrete reason.
-- [ ] Generated output was changed through its owner and regenerated.
-- [ ] Package/docs/skill/fixture/scenario/changeset contracts are synchronized.
-- [ ] Full `resolve-pr-feedback` ran for the exact complete or recovered PR;
+- [x] Intended behavior and exclusions are reconstructed from real sources.
+- [x] Each lane is proven or N/A with a concrete reason.
+- [x] Generated output was changed through its owner and regenerated.
+- [x] Package/docs/skill/fixture/scenario/changeset contracts are synchronized.
+- [x] Full `resolve-pr-feedback` ran for the exact complete or recovered PR;
       every
       actionable P1-or-higher finding was fixed, proved, replied to, and
       resolved or received the required top-level reply receipt.
-- [ ] For a complete or recovered PR, local committed `HEAD`, fetched PR ref,
+- [x] For a complete or recovered PR, local committed `HEAD`, fetched PR ref,
       and live `headRefOid` matched before proof/reply/resolution and after
       every push.
       For an absent-state PR, this and all feedback gates are N/A with the exact
       missing-state comment and `CLOSED` receipts.
-- [ ] Unfiltered top-level PR comments and review bodies were fetched through
+- [x] Unfiltered top-level PR comments and review bodies were fetched through
       the GitHub API, compared by ID/URL with helper output, and every excluded
       bot/author item was ledgered; identity alone never dismissed feedback.
       Only the exact terminal receipt produced/read back by this run is exempt
       from the versioned ledger.
-- [ ] All inline review threads were fetched with GraphQL cursor pagination
+- [x] All inline review threads were fetched with GraphQL cursor pagination
       without filtering resolved/outdated items; every thread has priority,
       rationale, relocation, and proof state in the ledger.
-- [ ] Every actionable feedback item has a persisted P0-P3 priority and
+- [x] Every actionable feedback item has a persisted P0-P3 priority and
       one-sentence rationale from the autoclosure rubric; ambiguous P1-versus-
       lower items fail closed as P1.
-- [ ] Every P1-or-higher proof reran after the final material branch push,
+- [x] Every P1-or-higher proof reran after the final material branch push,
       regardless of file type, including resolved or outdated threads that
       disappear from the helper's unresolved-thread output.
-- [ ] Feedback was re-fetched after the last push/reply/resolution and shows
+- [x] Feedback was re-fetched after the last push/reply/resolution and shows
       zero unresolved actionable P1-or-higher findings.
-- [ ] After all versioned plan/source updates were pushed, the exact-head P1
-      proof/read-back receipt was posted to the PR and read back; no terminal
-      receipt-only branch push was created. A post-comment `headRefOid` fetch
-      matches the OID recorded in that receipt, and a post-comment helper/raw
-      feedback fetch still shows zero actionable P1-or-higher items and no new
-      URL lacking a verdict or explicit deferral, except the verified receipt.
-- [ ] Any remaining P2-or-lower item has its exact URL plus the user's explicit
+- [ ] The terminal receipt is deliberately external rather than versioned: post
+      and read it after this final plan-only push, forbid later branch writes,
+      require receipt/live/fetched/local OID equality, and re-fetch feedback
+      before merging. The PR receipt is the authoritative result record.
+- [x] Any remaining P2-or-lower item has its exact URL plus the user's explicit
       priority deferral recorded; no feedback was silently ignored.
-- [ ] Accepted cleanup and review findings are closed.
-- [ ] PR body and check state match the final evidence.
-- [ ] Residual blocker/waiver has exact evidence and next owner.
-- [ ] Agent-native pack: source-of-truth rule files are edited instead of generated skill mirrors.
-- [ ] Agent-native pack: the changed agent action is discoverable from the skill/rule text.
-- [ ] Agent-native pack: generated mirrors are synced when `.agents/rules/**` changed, or N/A reason is recorded.
-- [ ] Agent-native pack: installed skills are changed only through
-      `npx skills add/update/remove`; local rules/templates/helpers stay source-owned.
-- [ ] Agent-native pack: routing, required receipts, placeholder failure,
+- [x] Accepted cleanup and review findings are closed.
+- [ ] PR body and check state must be updated/read back after the final blocker
+      evidence push.
+- [x] Residual waiver has exact evidence and owner: unrelated Expo drift is
+      user-waived; GitHub owns protected CI/review gates.
+- [x] Agent-native pack: N/A; no source-of-truth agent rule changed.
+- [x] Agent-native pack: N/A; no agent action changed.
+- [x] Agent-native pack: package skill source and generated mirror are synced;
+      `.agents/rules/**` did not change.
+- [x] Agent-native pack: no installed skill or lock state changed; published
+      package skill content stayed source-owned.
+- [x] Agent-native pack: routing, required receipts, placeholder failure,
       completion representability, and forbidden behavior have eval/smoke rows.
-- [ ] Agent-native pack: accepted agent-native review findings are fixed or explicitly rejected with reason.
+- [x] Agent-native pack: direct audit found no accepted/actionable findings.
 
 Error attempts:
 | Failure signature | Count | Next different move | Resolution |
@@ -224,51 +232,58 @@ Error attempts:
 | `bun check` cannot resolve `kitcn/auth/*` from `convex` before package artifacts exist | 1 | Build the package because package exports and artifacts are in scope, then rerun the exact gate | Resolved. The package build passed and the next check reached the test suite. |
 | Full Bun suite fails the two changed server-client tests after `auth-start/index.retry.test.ts` | 1 | Run the contaminator and victim together, then replace process-global module mocks with file-scoped spies | Resolved. The two-file repro changed from two failures to 15 passes. |
 | `fixtures:check` regenerates Expo SDK 55 guidance that differs from committed fixture snapshots | 1 | Do not add unrelated scaffold drift to PR #473. Ask whether to waive the gate or authorize a separate fixture repair. | Resolved for this PR by the user's `go` at 2026-09-30T00:58:19+02:00. The waiver applies only to this unrelated fixture lane. |
+| Required GitHub `CI` fails on the same waived Expo drift after normal fork-workflow approval | 1 | Do not bypass branch protection. Record the run and stop until a separately scoped fixture repair lands or GitHub no longer requires the failing context. | Blocked: https://github.com/udecode/kitcn/actions/runs/36644341283 |
 
 Completion Gates:
 | Gate | Applies | Required action | Evidence |
 | --- | --- | --- | --- |
-| Task intake classification | pending | Record immutable-head `complete`, `recoverable`, or `absent` sources and rationale | pending |
-| Per-PR task ownership | pending | Record exact PR and complete or recovered task-plan path | pending |
-| Recoverable task adoption | conditional | Preserve current work, run exact-PR `task`, repair plan/body evidence, and read back at new head | pending |
-| Absent-state disposition | conditional | Name the missing usable state, comment, close, and read back | pending |
-| Targeted behavior proof | pending | Run smallest missing owning proof | pending |
-| Source/generated audit | pending | Prove correct source and regenerated mirrors | pending |
-| Package/docs/scenario closure | pending | Run every applicable local contract | pending |
-| Feedback proof checkout | conditional | Complete or recovered PR only: require local committed `HEAD` = fetched PR ref = live `headRefOid` before proof/reply/resolution and at terminal verification | pending |
-| Live PR feedback resolution | conditional | Complete or recovered PR only: run full `resolve-pr-feedback` and close every actionable P1-or-higher finding; otherwise N/A with absent-state stop receipts | pending |
-| Feedback priority classification | conditional | Complete or recovered PR only: persist P0-P3 plus rationale for every actionable item; classify ambiguous P1-versus-lower as P1 | pending |
-| Final P1 proof replay | conditional | Complete or recovered PR only: after the final material branch push, rerun every P1-or-higher proof, including resolved/outdated items | pending |
-| Final live feedback read-back | conditional | Complete or recovered PR only: re-fetch helper plus unfiltered top-level/all-thread inventories; require zero actionable P1-or-higher and explicit P2-or-lower deferrals | pending |
-| External terminal receipt | conditional | Complete or recovered PR only: post/read exact-head receipt; require receipt/live/fetched/local OID equality and no unrecorded helper/raw URL except that verified receipt | pending |
-| Deslop | pending | Run bounded cleanup or N/A | pending |
-| Agent-native reviewer | pending | Run for workflow changes or N/A | pending |
-| Final lint | yes | Run `bun lint:fix` | pending |
-| Repository check | yes | Run `bun check` | pending |
-| GitHub delivery | pending | Commit/push/open or update PR and read back | pending |
-| Autoreview | yes | Resolve every accepted actionable finding | pending |
-| Goal plan complete | yes | Run `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-autoclosure.md` | pending |
-| Agent source / generated sync | pending | Run `bun install` when `.agents/rules/**` changed and verify generated mirrors | pending |
-| Installed lock audit | pending | Verify expected lock entries and removed skills through CLI-managed state | pending |
-| Agent action discoverability | pending | Source-audit the skill/rule path an agent will read | pending |
-| Helper and template smoke | pending | Syntax-check helpers and prove incomplete failure/completed representation when applicable | pending |
-| Agent-native review | pending | Load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted findings, or record N/A | pending |
+| Task intake classification | yes | Classify immutable head | `recoverable`: coherent source, tests, and detailed PR contract existed despite missing task evidence. |
+| Per-PR task ownership | yes | Bind exact PR and plan | PR #473 owns `docs/plans/473-optimistic-auth-gate.md`. |
+| Recoverable task adoption | yes | Preserve and repair | Existing work was adopted, repaired, committed, pushed, and read back. |
+| Absent-state disposition | no | N/A | The PR was recoverable; corrected autoclosure policy forbids closing partially good work. |
+| Targeted behavior proof | yes | Run owning proof | Final focused set: 97 pass, 0 fail, 293 assertions. |
+| Source/generated audit | yes | Prove owners and mirrors | Package skill source and generated mirror are byte-identical; no agent rule source changed. |
+| Package/docs/scenario closure | yes | Close applicable contracts | Typecheck/build/docs/skill/changeset pass; UI/scenario N/A; unrelated fixture drift waived. |
+| Feedback proof checkout | yes | Bind proof to exact head | Local/fetched/live matched at material head; repeat after the final plan-only push and external receipt. |
+| Live PR feedback resolution | yes | Inventory every surface | Helper 0 threads/1 non-noise comment/0 reviews; raw REST 2 bot comments; GraphQL 0 threads; zero actionable items. |
+| Feedback priority classification | yes | Persist verdicts | Both bot comments are informational P3 and ledgered with source-backed rationale. |
+| Final P1 proof replay | yes | Replay after material push | 97 focused tests, package typecheck/build, lint, full test lanes, intent checks, and autoreview pass after `ea5e442d...`. |
+| Final live feedback read-back | yes | Re-fetch every surface | Final material-head fetch shows zero actionable P0-P3 and no unresolved thread. |
+| External terminal receipt | yes | Post/read after final versioned push | Blocked until required GitHub `CI` passes; do not issue a false ready receipt. |
+| Deslop | yes | Run bounded cleanup | Removed 19 narrative/redundant comment lines, replaced a boolean flag with a typed callback, and renamed internal helpers. |
+| Agent-native reviewer | no | N/A | No agent workflow changed; direct ownership/mirror/discoverability audit is clean. |
+| Final lint | yes | Run lint | `bun lint` passes across 975 files. |
+| Repository check | yes | Run all applicable lanes | Local owning lanes pass, but required GitHub `CI` fails on waived moving Expo SDK 55 fixture drift: run 36644341283. |
+| GitHub delivery | yes | Push, read back, receipt, protected merge | Blocked: required `CI` is failure and review is required; no admin bypass is allowed. |
+| Autoreview | yes | Resolve accepted findings | Branch autoreview is clean; direct P1 audit found no remaining actionable issue. |
+| Goal plan complete | yes | Run goal checker | Blocked until required GitHub `CI`, code-owner approval, receipt, and merge complete. |
+| Agent source / generated sync | no | N/A | No `.agents/rules/**` source changed; package skill mirror sync passes. |
+| Installed lock audit | no | N/A | No installed skill or lock state changed. |
+| Agent action discoverability | no | N/A | No agent action changed; package guidance remains discoverable from the kitcn root skill. |
+| Helper and template smoke | no | N/A | No agent helper or plan template implementation changed. |
+| Agent-native review | no | N/A | No agent workflow delta; direct boundary audit and `intent` checks are clean. |
 
 Phase / pass table:
 | Phase | Status | Evidence | Next |
 | --- | --- | --- | --- |
 | Inventory | complete | immutable head, PR source, comments, checks, and recoverable classification recorded | task evidence repair |
 | Repair | complete | recovery commit and task-format body are live; local/fetched/live heads match | feedback and source review |
-| Review/checks | in_progress | | delivery |
-| Delivery | pending | | final audit |
-| Closeout | pending | | final |
+| Review/checks | complete | focused/full proof, feedback inventory, no-comments, direct P1 review, and autoreview are clean | delivery |
+| Delivery | blocked | required GitHub `CI` fails on unrelated Expo fixture drift; code-owner approval is also required | separate fixture repair or external rules change |
+| Closeout | blocked | no receipt or merge while the required context is red | resume after blocker clears |
 
 Verification evidence:
 - `bun --cwd packages/kitcn build` from the PR worktree passed.
 - `bun --cwd packages/kitcn typecheck` passed.
 - `bun test packages/kitcn/src/auth-start/index.retry.test.ts packages/kitcn/src/react/client.test.ts` failed before the test-isolation fix with two missing-`consistentQuery` errors, then passed with 15 tests.
-- The full Bun suite inside `bun check` passed with 1,473 tests after the fix.
-- `bun check` remains red only in `fixtures:check`. Expo's live SDK 55 template changed generated `AGENTS.md` and removed `CLAUDE.md`. The immutable PR diff contains no fixture, CLI registry, or tooling change.
+- The final focused set passed 97 tests with 293 assertions.
+- The full Bun lane passed 1,475 tests with 4,448 assertions; Vitest passed
+  1,053 tests with 14 skipped and no type errors.
+- `bun lint`, `bun run intent:validate`, `bun run intent:stale`, direct review,
+  no-comments cleanup, and branch autoreview pass.
+- `bun check` reaches only `fixtures:check`: Expo's live SDK 55 template changed
+  generated guidance outside the immutable PR diff. The user explicitly waived
+  only that unrelated lane.
 
 Feedback ledger:
 | URL | Source | Priority | Claim | Verdict | Rationale / proof | Reply | Resolution |
@@ -289,7 +304,7 @@ Timeline:
   artifacts. Package export proof requires the build, so the next move is
   `bun --cwd packages/kitcn build` followed by the same gate.
 - 2026-09-30T00:45:45+02:00 The package build, package typecheck, focused
-  contaminator-victim test, and all 1,473 Bun tests pass. The repository gate
+  contaminator-victim test, and all 1,475 Bun tests pass. The repository gate
   stops only on live Expo template drift outside PR #473.
 - 2026-09-30T00:49:29+02:00 Revalidated the clean local recovery commit and
   unchanged live PR head. The fixture runner delegates Expo creation to
@@ -311,23 +326,41 @@ Timeline:
   `29f558fbfd5ff37222d30d006a9fbee24744e9a1` reached the contributor branch.
   GitHub head, fetched `refs/pr/473`, and local `HEAD` matched; the live body
   contained exactly one task-plan line and the plan existed at that head.
+- 2026-09-30T01:20:00+02:00 Material head
+  `ea5e442d5774fc7f7c0aa1f1d6bae8c1c34b7747` reached the contributor branch.
+  Post-push proof passed 97 focused tests, package typecheck/build, lint, 1,475
+  Bun tests, 1,053 Vitest tests, intent validation/stale checks, direct P1
+  review, no-comments cleanup, and autoreview. Feedback remained zero
+  actionable items across helper, REST, and GraphQL inventories.
+- 2026-09-30T01:25:00+02:00 GitHub classified the fork `CI` run as
+  `action_required`, not failed. Normal maintainer workflow approval was issued;
+  protected-branch CI and code-owner review remain mandatory.
+- 2026-09-30T01:28:00+02:00 Required GitHub `CI` run 36644341283 passed
+  install, skill validation, package build, 1,475 Bun tests, 1,053 Vitest tests,
+  CLI tests, and Concave smoke, then failed only when the moving Expo SDK 55
+  template changed generated `.claude/settings.json`, `AGENTS.md`, and
+  `CLAUDE.md`. The user's local waiver cannot turn a required GitHub context
+  green, and Shipping forbids an admin bypass.
 
 Reboot status:
 | Question | Answer |
 | --- | --- |
-| Where am I? | Recovery is complete; live feedback and source review are active. |
-| Where am I going? | Push exact task evidence, then review, feedback, final checks, guarded merge, and final audit. |
+| Where am I? | Local/source closeout is complete; protected GitHub delivery is blocked by the unrelated fixture failure. |
+| Where am I going? | Resume only after a separately scoped fixture repair clears required `CI`, then obtain code-owner approval, bind the receipt, guarded-merge, and confirm landing. |
 | What is the goal? | Merge only a fully recovered and verified PR #473. |
-| What have I learned? | The PR is recoverable. Its test suite had one process-global mock leak. The remaining check failure is unrelated Expo fixture drift. |
-| What have I done? | Created exact-PR plans, fixed the test leak, passed focused tests, package build, package typecheck, lint, and the full Bun suite. |
+| What have I learned? | The PR was recoverable. It also needed callback-safe cleanup, admission-time getter reads, public type tightening, docs, and isolated retry mocks. |
+| What have I done? | Repaired source/tests/docs/types, synchronized skills, passed owning proofs and reviews, classified all feedback, and approved the normal fork CI run. |
 
 Open risks:
 - `bun check` is not green because the external Expo template no longer matches
   committed fixture guidance. The user explicitly waived only that unrelated
   lane for PR #473; all other gates remain mandatory.
-- GitHub still reports Vercel failure because the contributor deployment needs
-  udecode team authorization. Vercel is not the required ruleset context; `CI`
-  is required and should rerun after a permitted push.
+- GitHub reports Vercel failure because the contributor deployment needs
+  udecode team authorization. Vercel is not a required ruleset context.
+- Required GitHub `CI` is red at run 36644341283 on the same unrelated Expo
+  fixture drift. The user's waiver closes the local scope decision, not the
+  server-enforced status requirement. Clearing it needs a separate fixture
+  repair or a repository-owner rules change; this run will not bypass it.
 - The `main` ruleset requires a code-owner approval after the final push. This
   run will not use the account's available bypass.
 
@@ -335,13 +368,14 @@ Resolved blocker receipt:
 - Attempted: installed dependencies, built `packages/kitcn`, fixed the
   deterministic suite contamination, reran focused tests, package typecheck,
   lint, and the full repository gate across three goal turns.
-- Evidence: 15 focused tests and all 1,473 Bun tests pass. `bun check` stops
+- Evidence: 97 focused tests and all 1,475 Bun tests pass. `bun check` stops
   only when the moving Expo SDK 55 template changes generated guidance outside
-  PR #473. Live PR head remains `424a3bec59d8c9b1accf592ad534ef73ad90e7dc`.
+  PR #473. Final material head is
+  `ea5e442d5774fc7f7c0aa1f1d6bae8c1c34b7747`.
 - Previous blocker: repo policy forbade updating the PR with a failing
   `bun check`, and autoclosure forbade adding unrelated fixture or CLI scope.
 - Resolution: the user's `go` at 2026-09-30T00:58:19+02:00 explicitly waives
   only the unrelated Expo fixture lane for PR #473. A code-owner approval will
   still be required after the final push.
-- Live PR feedback review has not begun because the recovery evidence has not
-  reached the PR head.
+- Live feedback review is complete: zero actionable items, with both bot
+  comments ledgered as informational P3.

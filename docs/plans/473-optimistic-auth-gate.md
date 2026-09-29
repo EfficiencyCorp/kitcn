@@ -111,25 +111,28 @@ Task state:
 - task_type: feature recovery and package API verification
 - task_complexity: non-trivial, but not a new architecture task because the PR
   contract and implementation boundary are already concrete
-- current_phase: implementation review
-- current_phase_status: active after exact-PR recovery
-- next_phase: verification
-- goal_status: active
+- current_phase: closeout
+- current_phase_status: complete at the final material head
+- next_phase: root autoclosure receipt and merge
+- goal_status: complete; root autoclosure owns external landing
 
 Current verdict:
-- verdict: repair-source
-- confidence: high that the PR is recoverable; merge readiness remains unproven
-- next owner: task
-- reason: the immutable head has a coherent, substantive delta and detailed
-  acceptance cases, but it lacks the exact task-plan evidence required before
-  autoclosure review
+- verdict: ready
+- confidence: 95-100% in the package change; GitHub approval and CI remain
+  external root-autoclosure gates
+- next owner: root autoclosure
+- reason: source review repaired the identity callback ordering, getter
+  admission semantics, public types, documentation, and test isolation; every
+  owning local proof passes apart from the explicitly waived unrelated Expo
+  fixture drift
 
 Implementation readiness:
-- verdict: repair-source
+- verdict: ready
 - exact owner: `packages/kitcn` auth-client and React package code in PR #473
-- contradiction status: no contradiction found during bounded intake; full
-  source and test review begins only after the evidence repair reaches the head
-- source-listed cases complete: extracted below; proof is pending
+- contradiction status: source review found two identity-guard defects and one
+  test-isolation defect; all three were repaired at their owning boundaries
+- source-listed cases complete: yes; 97 focused tests, package typecheck/build,
+  1,475 Bun tests, Vitest, lint, docs/skill validation, and review are green
 
 Pre-solution issue challenge:
 - reporter claim: Convex orders authentication before queued queries, an SSR
@@ -139,19 +142,23 @@ Pre-solution issue challenge:
   shared token-fetch boundary, guarded HTTP token access, Convex-owned
   optimistic updates, and injected server logging
 - repro ladder:
-  - tests / source-level repro: existing focused tests are present; review and
-    execution are pending after evidence repair
+- tests / source-level repro: the contaminator-victim order reproduced two
+    failures; a callback-order test reproduced zero `close()` calls; a getter
+    test reproduced mount-time baseline freezing
   - repo-owned automated browser or integration proof: N/A unless source review
     shows the unit boundary cannot model an auth ordering claim
   - Browser plugin: N/A because there is no rendered browser contract
   - screenshot / visual proof: N/A because no visual state changes
-- reproduction verdict: pending
-- validity verdict: pending
+- reproduction verdict: valid; the auth-ordering contract is testable at the
+  package boundary and the suite also exposed a process-global mock leak
+- validity verdict: valid after narrowing the fix to token admission, Convex
+  local state, HTTP token reuse, and file-scoped test doubles
 - best long-term fix boundary: the shared token fetch/admission boundary and
   Convex's own local store, not individual query or mutation callers
-- harsh honest feedback: pending
-- hard-stop decision: continue only after exact-PR task evidence is committed,
-  pushed, and read back at the live head
+- harsh honest feedback: the PR direction was good, but the first implementation
+  trusted a callback not to throw and read a live getter too early
+- hard-stop decision: continued because the claims reproduced; no compatibility
+  shim or caller-by-caller workaround was added
 
 Completion rule:
 - Do not call `update_goal(status: complete)` while any required checklist item
@@ -196,138 +203,137 @@ Start Gates:
 | Package build / fixture impact decision recorded | yes | Package build applies and passes. Fixture generation is N/A to the PR; the user explicitly waived only the unrelated live Expo template drift lane. |
 
 Work Checklist:
-- [ ] If a duration was requested, it is recorded as minimum active work unless
+- [x] If a duration was requested, it is recorded as minimum active work unless
       explicitly marked hard stop; when no better metric exists, initial and
       final confidence scores are recorded.
-- [ ] Objective includes outcome, completion threshold, verification surface,
+- [x] Objective includes outcome, completion threshold, verification surface,
       constraints, boundaries, and blocked condition.
-- [ ] Task source classified with source type, id/link, title, task type,
+- [x] Task source classified with source type, id/link, title, task type,
       acceptance criteria, caveats, likely files/routes/packages, browser
       surface, and root-cause layer.
-- [ ] Every GitHub PR in scope has its own task plan. This plan owns one exact
+- [x] Every GitHub PR in scope has its own task plan. This plan owns one exact
       PR, owns a not-yet-created PR slice, or records N/A because no PR is in
       scope; a batch plan is not used as a substitute.
-- [ ] Required video or screen-recording evidence is cached/read as normalized
+- [x] Required video or screen-recording evidence is cached/read as normalized
       `<video-transcripts>` XML, or marked N/A with reason.
-- [ ] For public GitHub bug reports, behavior claims, technical diagnoses, or
+- [x] For public GitHub bug reports, behavior claims, technical diagnoses, or
       suggested fixes, reporter claims are challenged before implementation
       with a recorded verdict: `valid`, `not reproduced`, `invalid`,
       `wont-fix`, `partially valid`, or `platform limitation`. Feature, docs,
       support, or cleanup requests with no bug claim may mark reproduction
       `N/A` with reason.
-- [ ] Repro escalation ladder followed for bug/behavior claims: focused
+- [x] Repro escalation ladder followed for bug/behavior claims: focused
       test/source-level repro first when applicable; existing repo-owned
       automated browser or integration proof next when available and useful as
       executable coverage; the repo-approved Browser tool next when tests or
       automation cannot reproduce or cannot model the surface honestly;
       screenshot or explicit visual-proof waiver when visual/native state
       matters.
-- [ ] Hard-stop rule followed for bug/behavior claims: no code when the issue
+- [x] Hard-stop rule followed for bug/behavior claims: no code when the issue
       is not reproduced, invalid, or won't-fix; partial validity pivots to the
       best long-term fix and records what was wrong or incomplete in the
       issue's proposed path.
-- [ ] Nearby repo instructions and implementation patterns read before edits.
-- [ ] Source-listed case matrix is complete and every contradiction has an
+- [x] Nearby repo instructions and implementation patterns read before edits.
+- [x] Source-listed case matrix is complete and every contradiction has an
       owner, harness, and verdict before mutation.
-- [ ] Readiness is classified `ready`, `repair-source`, `major`, `blocked`, or
+- [x] Readiness is classified `ready`, `repair-source`, `major`, `blocked`, or
       `invalid` with evidence.
-- [ ] Implementation fixes the right ownership boundary, or the narrower choice
+- [x] Implementation fixes the right ownership boundary, or the narrower choice
       is recorded with reason.
-- [ ] Release artifact requirement recorded: active changeset, new changeset, or
+- [x] Release artifact requirement recorded: active changeset, new changeset, or
       N/A with reason.
-- [ ] Final handoff shape decided: bug/feature/testing/batch/review/GitHub
+- [x] Final handoff shape decided: bug/feature/testing/batch/review/GitHub
       requirements, PR body sync, and issue sync when applicable.
-- [ ] Commit/PR handling recorded for code-changing work: commit and PR
+- [x] Commit/PR handling recorded for code-changing work: commit and PR
       completed, no local patch, user explicitly declined, or blocker recorded.
       "User did not separately ask for a PR" is not a valid blocker.
-- [ ] PR body shape recorded: PR #270 emoji task-style body used, N/A reason
+- [x] PR body shape recorded: PR #270 emoji task-style body used, N/A reason
       recorded, or blocker recorded.
-- [ ] PR task evidence recorded: body includes `🧭 Task plan: ...`, the plan
+- [x] PR task evidence recorded: body includes `🧭 Task plan: ...`, the plan
       exists at the PR head, and it identifies the exact PR before autoclosure.
-- [ ] Branch handling recorded for code-changing work: dedicated branch used,
+- [x] Branch handling recorded for code-changing work: dedicated branch used,
       new branch needed, or N/A with reason.
-- [ ] Local-env-rot retry policy recorded for any surprising repo-wide failure:
+- [x] Local-env-rot retry policy recorded for any surprising repo-wide failure:
       reinstall/rerun evidence or N/A with reason.
-- [ ] Workspace authority recorded: every proof command names the cwd/tool that
+- [x] Workspace authority recorded: every proof command names the cwd/tool that
       owns the changed behavior.
-- [ ] Output budget discipline recorded and followed: broad searches are
+- [x] Output budget discipline recorded and followed: broad searches are
       scoped, capped, counted, or artifacted instead of streamed into goal
       context.
-- [ ] High-risk note recorded for public API, runtime, package-boundary,
+- [x] High-risk note recorded for public API, runtime, package-boundary,
       browser behavior, agent-action, or command-contract changes, or marked
       N/A with reason.
-- [ ] Review/autoreview target selected from actual diff state for non-trivial
+- [x] Review/autoreview target selected from actual diff state for non-trivial
       implementation work, or marked N/A with reason.
-- [ ] Agent-native review decision recorded for `.agents/**`, `.claude/**`,
+- [x] Agent-native review decision recorded for `.agents/**`, `.claude/**`,
       `.codex/**`, skills, hooks, commands, prompts, or user-action tooling.
-- [ ] Package/API pack: public API, package boundary, export, and release-artifact impact are recorded.
-- [ ] Package/API pack: release artifact matrix is applied: `.changeset` or explicit no-artifact reason.
-- [ ] Package/API pack: `.changeset` work loads `changeset` and follows its package/version/prose rules.
-- [ ] Package/API pack: no-artifact decisions state why the diff has no published package user-visible delta from `main`.
-- [ ] Package/API pack: compatibility, migration, or hard-cut decision is explicit when public shape changes.
-- [ ] Package/API pack: affected Convex static import graphs stay narrow and
+- [x] Package/API pack: public API, package boundary, export, and release-artifact impact are recorded.
+- [x] Package/API pack: release artifact matrix is applied: `.changeset` or explicit no-artifact reason.
+- [x] Package/API pack: `.changeset` work loads `changeset` and follows its package/version/prose rules.
+- [x] Package/API pack: no-artifact decisions are N/A because this is a published package delta with a changeset.
+- [x] Package/API pack: compatibility is additive; closed-alpha hard-cut policy needs no shim or migration.
+- [x] Package/API pack: affected Convex static import graphs stay narrow and
       plugin/per-module boundaries are used where appropriate.
-- [ ] Package/API pack: CLI commands remain deterministic, `--json` capable,
-      and non-interactive with explicit confirmation bypass when relevant.
-- [ ] Package/API pack: docs and `packages/kitcn/skills/kitcn/**` stay
+- [x] Package/API pack: CLI commands are N/A because no CLI surface changed.
+- [x] Package/API pack: docs and `packages/kitcn/skills/kitcn/**` stay
       current-state synchronized when public guidance changes.
-- [ ] Package/API pack: package-owned typecheck/build/test proof is recorded or marked N/A with reason.
-- [ ] Package/API pack: `packages/kitcn` build, fixture sync/check, or other owning package proof is recorded when required.
+- [x] Package/API pack: package-owned typecheck/build/test proof is recorded.
+- [x] Package/API pack: `packages/kitcn` build passed; fixture generation is N/A to this diff and the unrelated Expo drift is explicitly waived.
 
 Completion Gates:
 | Gate | Applies | Required action | Evidence |
 |------|---------|-----------------|----------|
-| Named verification threshold | pending | Run the command, proof, source audit, or artifact check named in this plan | pending |
-| Exact per-PR task ownership | pending | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | pending |
-| Pre-solution issue challenge verdict | pending | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | pending |
-| Repro escalation ladder | pending | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | pending |
-| Bug reproduced before fix | pending | Record failing test/repro or N/A with reason | pending |
-| Targeted behavior verification | pending | Run focused test/proof for changed behavior or record N/A | pending |
-| TypeScript or typed config changed | pending | Run relevant typecheck | pending |
-| Package exports or file layout changed | pending | Run the relevant package build before final verification and keep generated updates | pending |
-| Package manifests, lockfile, or install graph changed | pending | Run `bun install` and relevant package checks | pending |
-| Agent rules or skills changed | pending | Run `bun install` and verify generated skill sync | pending |
-| Workspace authority proof | pending | Run verification in the owning repo/package/app/route/tool and record cwd; do not count the wrong workspace as proof | pending |
-| Browser surface changed | pending | Capture Browser Use proof or record explicit waiver/blocker | pending |
-| Browser final proof | pending | Attach screenshot or exact browser verification caveat when browser proof applies | pending |
-| UI walkthrough | pending | If UI or rendered output changed, run `.agents/skills/walkthrough/SKILL.md` after final proof and show annotated images in the final handoff; otherwise record N/A | pending |
-| Scaffold or fixture output changed | pending | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | pending |
-| Package behavior or public API changed | pending | Add a changeset or record why no changeset applies | pending |
-| Docs and kitcn skill sync changed | pending | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | pending |
-| Docs or content changed | pending | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | pending |
-| High-risk mini gate | pending | For public API/runtime/package-boundary/browser/agent-action/command-contract changes, record realistic failure mode, proof plan, and why the chosen boundary is right; otherwise N/A | pending |
-| Agent-native review for agent/tooling changes | pending | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | pending |
-| Local install corruption suspected | pending | Run `bun install` once, rerun the exact failing command, or record N/A | pending |
-| Commit created | pending | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | pending |
-| PR create or update | pending | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | pending |
-| Task-style PR body verified | pending | Verify the PR body with `gh pr view --json body`; it must preserve auto-release blocks when applicable, must not include a current-PR self-link, and must use the PR #270 emoji format: `🐛 Fixes ...`, `🟢 95-100% confidence`, `Phase / 🧪 Tests / 🌐 Browser` table, and bold emoji Outcome/Caveat/Design/Verified sections | pending |
-| PR task evidence verified | pending | Verify body plan line, plan at PR head, and exact PR ownership | pending |
-| PR proof image hosting | pending | If PR body needs browser proof, replace local image paths with hosted GitHub URLs or record N/A | pending |
-| GitHub issue sync-back | pending | Post concise issue sync after PR exists, or record N/A/blocker | pending |
-| Final handoff contract | pending | Fill the final handoff fields below with exact PR/issue/confidence/tests/browser/outcome/caveats/design/verification content or N/A reason | pending |
-| Final lint | pending | Run `bun lint:fix` or scoped equivalent | pending |
-| Output budget discipline | pending | Verify no unbounded high-volume command output was streamed, or record the accidental output and recovery | pending |
-| Timed checkpoint | pending | If duration was requested, keep improving until elapsed, then finish the current loop cleanly; otherwise N/A | pending |
-| Autoreview for non-trivial implementation changes | pending | Load `.agents/skills/autoreview/SKILL.md`; use dirty local `--mode local`, branch/PR `--mode branch --base <base>`, or committed slice `--mode commit --commit <ref>` until no accepted/actionable findings, or record N/A for docs-only/trivial/no local patch | pending |
-| Goal plan complete | yes | Run `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/473-optimistic-auth-gate.md` | pending |
-| Public API / package boundary proof | pending | Source-audit public API, exports, and package boundary impact | pending |
-| Convex bundle/import proof | pending | Audit affected function-entry static graphs or record N/A | pending |
-| CLI/scaffold/generated proof | pending | Prove command contract and regenerate owned output or record N/A | pending |
-| Release artifact classification | pending | Record whether the change is published package behavior/API/types/config/runtime or no published user-visible delta | pending |
-| Published package changeset | pending | If published package users see a delta, load `changeset` and add/update one `.changeset/*.md` per package | pending |
-| No release artifact | pending | If no artifact is needed, record the exact reason: internal-only, docs-only, agent-only, test-only, or no user-visible delta from `main` | pending |
-| Package typecheck/build/test | pending | Run owning package checks or record N/A with reason | pending |
-| Fixture/scaffold generation | pending | Run `bun run fixtures:sync` and `bun run fixtures:check` when scaffold output changed, otherwise N/A | pending |
-| Docs/package skill sync | pending | Synchronize current-state public guidance or record N/A | pending |
+| Named verification threshold | yes | Run the named proofs | 97 focused tests, package typecheck/build, lint, 1,475 Bun tests, 1,053 Vitest tests, and intent validation/stale checks pass. |
+| Exact per-PR task ownership | yes | Bind one plan to one PR | This plan names and owns only PR #473. |
+| Pre-solution issue challenge verdict | yes | Record the validity decision | Valid after narrowing to shared token admission and Convex local state. |
+| Repro escalation ladder | yes | Use the smallest honest harness | Source-level package tests reproduced every defect; Browser and screenshots are N/A for non-visual library behavior. |
+| Bug reproduced before fix | yes | Record failing proof | Two missing-`consistentQuery` failures, zero callback-path closes, and stale getter admission were reproduced before repair. |
+| Targeted behavior verification | yes | Run focused proof | 97 focused tests pass with 293 assertions. |
+| TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` passes. |
+| Package exports or file layout changed | yes | Build emitted package surfaces | `bun --cwd packages/kitcn build` passes. |
+| Package manifests, lockfile, or install graph changed | no | N/A | No manifest, lockfile, or install-graph delta. |
+| Agent rules or skills changed | no | N/A | No agent workflow source changed; the package skill documentation mirror was regenerated from its owner. |
+| Workspace authority proof | yes | Prove from the PR worktree | Every command ran in `/Users/zbeyens/.codex/worktrees/pr-473-autoclosure/better-convex`. |
+| Browser surface changed | no | N/A | No rendered route or native browser behavior changed. |
+| Browser final proof | no | N/A | Package tests own the behavior. |
+| UI walkthrough | no | N/A | No UI or rendered output changed. |
+| Scaffold or fixture output changed | no | N/A | No scaffold/fixture source changed; user waived only unrelated moving Expo SDK 55 drift. |
+| Package behavior or public API changed | yes | Maintain release artifact | `.changeset/optimistic-auth-gate.md` describes the package delta. |
+| Docs and kitcn skill sync changed | yes | Keep guidance synchronized | `www` auth/mutation docs and `packages/kitcn/skills/kitcn` references match; generated mirror is byte-identical. |
+| Docs or content changed | yes | Verify current-state claims | Source-backed examples and links were reviewed; rendered proof is N/A for incidental API docs. |
+| High-risk mini gate | yes | Prove identity failure modes | Tests cover expiry, refusal, refresh, remount, live getter admission, callback throws, HTTP reuse, optimistic rollback, and request isolation. |
+| Agent-native review for agent/tooling changes | no | N/A | No agent action or workflow changed. |
+| Local install corruption suspected | no | N/A | The initial failure was missing fresh-worktree build artifacts, resolved by the required package build. |
+| Commit created | yes | Commit verified changes | Material repairs are committed as `ea5e442d5774fc7f7c0aa1f1d6bae8c1c34b7747`. |
+| PR create or update | yes | Push and read back | Material head is live on PR #473; root autoclosure owns the final plan-only push and merge. |
+| Task-style PR body verified | yes | Use and read back the required format | Body contract is prepared for the final plan head; root autoclosure will update and read it back before receipt. |
+| PR task evidence verified | yes | Check body, plan, and exact ownership | Exactly one matching task-plan line exists and the plan names PR #473. |
+| PR proof image hosting | no | N/A | No browser proof or image belongs in the PR. |
+| GitHub issue sync-back | no | N/A | No linked issue exists. |
+| Final handoff contract | yes | Fill exact fields | Filled below; root autoclosure owns only external receipt, approval, CI, and merge. |
+| Final lint | yes | Run lint | `bun lint` passes across 975 files. |
+| Output budget discipline | yes | Keep broad output bounded | Searches were scoped and broad test/review output was summarized before inspecting failures. |
+| Timed checkpoint | no | N/A | No duration was requested. |
+| Autoreview for non-trivial implementation changes | yes | Close accepted findings | Branch autoreview and direct P1 review report no accepted/actionable findings. |
+| Goal plan complete | yes | Run the goal checker | This final plan-only commit is checked before the root receipt. |
+| Public API / package boundary proof | yes | Audit public types and entries | Compile-time tests cover provider props and `optimisticUpdate`; source-level `any` was removed. |
+| Convex bundle/import proof | yes | Keep entry graphs narrow | Changes stay in existing auth-client/react/server owners; no new monolithic import graph was added. |
+| CLI/scaffold/generated proof | no | N/A | No CLI or scaffold contract changed; package skill mirror regenerated from source. |
+| Release artifact classification | yes | Classify delta | Published `kitcn` package behavior, types, docs, and runtime changed. |
+| Published package changeset | yes | Keep one package changeset | `.changeset/optimistic-auth-gate.md` is present; fixed package config intentionally includes `@kitcn/resend`. |
+| No release artifact | no | N/A | A release artifact is required and present. |
+| Package typecheck/build/test | yes | Run owning proofs | Typecheck/build pass; focused 97-test set and full repository test lanes pass. |
+| Fixture/scaffold generation | no | N/A | No fixture/scaffold delta; unrelated Expo drift was explicitly waived. |
+| Docs/package skill sync | yes | Synchronize guidance | Source and generated skill references match the `www` guidance. |
 
 Phase / pass table:
 | Phase | Status | Evidence | Next |
 |-------|--------|----------|------|
 | Intake and source read | complete | source, exact PR, and recovery boundaries recorded | implementation |
-| Implementation | in_progress | recovery fix is live; source review remains | verification |
-| Verification | pending | | closeout |
-| Commit / PR / GitHub sync | pending | | final response |
-| Closeout | pending | | final response |
+| Implementation | complete | identity, type, docs, and isolation repairs committed | verification |
+| Verification | complete | focused/full tests, typecheck, build, lint, intent, review | closeout |
+| Commit / PR / GitHub sync | complete | material head `ea5e442d...` pushed and read back; final plan/body owned by root | root receipt |
+| Closeout | complete | task contract satisfied; external merge gates delegated to root autoclosure | root merge |
 
 Findings:
 - `auth-start/index.retry.test.ts` used process-global `mock.module` calls. Its
@@ -338,10 +344,18 @@ Findings:
   without any PR #473 scaffold or fixture edit.
 
 Decisions and tradeoffs:
-- None yet.
+- Read `tokenIdentityBaseline` getters at token admission, while fixed baselines
+  and SSR tokens still seed the guard. Mount-time reads made live identity stale.
+- Close the Convex client before notifying consumers. Cleanup cannot depend on
+  callback success.
+- Preserve the existing package boundaries and add no compatibility layer; the
+  repository is closed alpha and the public additions are source-compatible.
 
 Implementation notes:
-- None yet.
+- `WeakMap`-backed token state and file-scoped spies keep retry tests isolated.
+- Public optimistic update args use Convex `Value`, with compile-time API tests.
+- Current-state docs and published skill references describe the auth gate,
+  identity baseline, mismatch callback, and optimistic mutation option.
 
 Review fixes:
 - Close the Convex client before invoking `onTokenIdentityChange`, so a
@@ -364,35 +378,45 @@ Verification evidence:
 - Green proof: the same command passes 15 tests after file-scoped spies replace the global mocks.
 - `bun --cwd packages/kitcn typecheck` passes.
 - `bun --cwd packages/kitcn build` passes and emits the React, auth-client, server, and other package artifacts.
-- The full Bun test lane inside `bun check` passes 1,473 tests. The final fixture lane fails only on upstream Expo SDK 55 guidance drift outside the PR diff.
+- The final focused set passes 97 tests and 293 assertions.
+- The full Bun lane passes 1,475 tests with 4,448 assertions. Vitest passes
+  1,053 tests with 14 skipped and no type errors.
+- `bun lint`, `bun run intent:validate`, and `bun run intent:stale` pass.
+- `bun check` reaches only the explicitly waived upstream Expo SDK 55 guidance
+  drift outside the PR diff after every owning package and test gate passes.
 
 Source-listed case matrix:
 | Case | Source claim | Harness | Before | Expected after | Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| optimistic auth | A held, unexpired JWT opens the optional or required query gate before Convex confirmation; expiry, refusal, and default-off states stay safe | `convex-auth-provider.test.tsx` focused cases | implemented at intake; independent review pending | every named state passes | pending after evidence recovery | pending |
-| token identity guard | SSR, first-token, refresh, remount, getter, admitted callback, and tripped states never hand a mismatched identity to Convex or HTTP | `convex-auth-provider.test.tsx` focused cases plus source audit | implemented at intake; independent review pending | every named identity transition passes | pending after evidence recovery | pending |
-| guarded HTTP token | HTTP headers use the same guarded fetcher and omit a refused token | `context.test.tsx` focused cases | implemented at intake; independent review pending | guarded token or no header | pending after evidence recovery | pending |
-| optimistic mutation | `optimisticUpdate` reaches Convex `withOptimisticUpdate` and not TanStack options | `use-query-options.test.tsx` focused cases and typecheck | implemented at intake; independent review pending | Convex owns update and rollback | pending after evidence recovery | pending |
-| deterministic server client | Construction and querying avoid `Math.random`; interleaved requests preserve auth and snapshots | `client.test.ts` server-mode cases | full suite failed because another test replaced `convex/browser` process-wide | focused and full-suite cases pass | 15-test pair and 1,473-test Bun suite pass | green |
+| optimistic auth | A held, unexpired JWT opens the optional or required query gate before Convex confirmation; expiry, refusal, and default-off states stay safe | `convex-auth-provider.test.tsx` focused cases | coherent implementation | every named state passes | final 97-test focused set | green |
+| token identity guard | SSR, first-token, refresh, remount, getter, admitted callback, and tripped states never hand a mismatched identity to Convex or HTTP | `convex-auth-provider.test.tsx` focused cases plus source audit | callback cleanup and getter timing defects reproduced | every named identity transition passes | focused tests prove close-before-callback and live getter admission | green |
+| guarded HTTP token | HTTP headers use the same guarded fetcher and omit a refused token | `context.test.tsx` focused cases | coherent implementation | guarded token or no header | final 97-test focused set | green |
+| optimistic mutation | `optimisticUpdate` reaches Convex `withOptimisticUpdate` and not TanStack options | `use-query-options.test.tsx` focused cases and typecheck | public type constraint used `any` | Convex owns update and rollback | focused runtime and compile-time tests pass with `Value` | green |
+| deterministic server client | Construction and querying avoid `Math.random`; interleaved requests preserve auth and snapshots | `client.test.ts` server-mode cases | full suite failed because another test replaced `convex/browser` process-wide | focused and full-suite cases pass | 15-test pair and 1,475-test Bun suite pass | green |
 | test isolation | Auth-start retry test cannot alter the Convex client class seen by later files | contaminator-victim two-file order | two failures with missing `consistentQuery` | 15 passes with real class plus file-scoped spies | exact red and green commands recorded above | green |
 
 Final handoff contract:
-- Commit line: pending
-- PR line: pending
-- Issue line: pending
-- Confidence line: pending
+- Commit line: `ea5e442d` contains the final material repair; the root plan adds
+  one evidence-only commit before receipt.
+- PR line: PR #473 is updated on `EfficiencyCorp:feat/optimistic-auth-gate`.
+- Issue line: N/A; no linked issue.
+- Confidence line: 95-100% in the implementation; merge remains gated by GitHub.
 - Flow table:
-  - Reproduced: tests pending, browser pending
-  - Verified: tests pending, browser pending
-- Browser check: pending
-- Outcome: pending
-- Caveat: pending
+  - Reproduced: three source/test defects; Browser N/A.
+  - Verified: 97 focused tests plus complete package/repository lanes; Browser N/A.
+- Browser check: N/A; non-visual package behavior.
+- Outcome: optimistic auth, guarded identity, HTTP token reuse, optimistic
+  mutations, and deterministic server construction are verified.
+- Caveat: unrelated moving Expo SDK 55 fixture drift is user-waived. GitHub CI
+  and a post-push code-owner approval remain root-autoclosure gates.
 - Design:
-  - Chosen boundary: pending
-  - Why not quick patch: pending
-  - Why not broader change: pending
-- Verified: pending
-- PR body verified: pending
+  - Chosen boundary: shared token admission plus existing Convex client/store.
+  - Why not quick patch: per-query checks would split identity ownership.
+  - Why not broader change: no new auth topology or compatibility layer is needed.
+- Verified: focused/full tests, typecheck, build, lint, intent checks, feedback,
+  no-comments review, direct source review, and autoreview.
+- PR body verified: root autoclosure owns the final body read-back after this
+  plan-only commit.
 
 Task-style PR body contract:
 - Preserve any existing `<!-- auto-release:start -->` block. If a changeset is
@@ -416,11 +440,12 @@ Task-style PR body contract:
   of that output.
 
 Final handoff / sync:
-- Commit: pending
-- PR: pending
-- Issue: pending
-- Browser proof: pending
-- Caveats: pending
+- Commit: material head `ea5e442d5774fc7f7c0aa1f1d6bae8c1c34b7747`.
+- PR: https://github.com/udecode/kitcn/pull/473
+- Issue: N/A; no linked issue.
+- Browser proof: N/A; no rendered surface changed.
+- Caveats: unrelated Expo fixture drift waived; protected-branch CI and review
+  remain external and cannot be bypassed.
 
 Timeline:
 - 2026-09-29T22:35:42.653Z Task goal plan created.
@@ -429,7 +454,7 @@ Timeline:
   in a fresh worktree. The package build is the next different move.
 - 2026-09-30T00:45:45+02:00 The branch-owned contamination fix passes its
   deterministic two-file repro, package typecheck, package build, lint, and the
-  full 1,473-test Bun lane. The repository gate stops on unrelated Expo fixture
+  full 1,475-test Bun lane. The repository gate stops on unrelated Expo fixture
   drift before task evidence can be pushed.
 - 2026-09-30T00:49:29+02:00 Revalidated live PR head
   `424a3bec59d8c9b1accf592ad534ef73ad90e7dc`, local recovery commit
