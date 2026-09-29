@@ -111,9 +111,9 @@ Task state:
 - task_type: feature recovery and package API verification
 - task_complexity: non-trivial, but not a new architecture task because the PR
   contract and implementation boundary are already concrete
-- current_phase: task evidence recovery
-- current_phase_status: active after explicit unrelated-fixture waiver
-- next_phase: push evidence, then implementation review
+- current_phase: implementation review
+- current_phase_status: active after exact-PR recovery
+- next_phase: verification
 - goal_status: active
 
 Current verdict:
@@ -184,7 +184,7 @@ Start Gates:
 | Browser tool decision for browser surface | no | N/A. No rendered or native browser behavior changes. |
 | Commit / PR expectation decision | yes | Commit and push to the existing PR are required after `bun check` passes or the user explicitly waives its unrelated fixture lane |
 | Task-style PR body decision | yes | Replace the current prose body with the required PR #270 task format while preserving the auto-release block |
-| Task-plan PR body evidence | yes | Required path is `docs/plans/473-optimistic-auth-gate.md`; live body/head proof is pending the recovery push |
+| Task-plan PR body evidence | yes | Live body has exactly one `🧭 Task plan: docs/plans/473-optimistic-auth-gate.md` line and the plan exists at the recovered head |
 | GitHub issue sync expectation decision | no | N/A. No linked issue exists. |
 | Output budget strategy recorded | yes | Recorded above before broad review or feedback inventory |
 | Package/API pack selected | yes | `package-api` is materialized in this plan |
@@ -324,7 +324,7 @@ Phase / pass table:
 | Phase | Status | Evidence | Next |
 |-------|--------|----------|------|
 | Intake and source read | complete | source, exact PR, and recovery boundaries recorded | implementation |
-| Implementation | pending | | verification |
+| Implementation | in_progress | recovery fix is live; source review remains | verification |
 | Verification | pending | | closeout |
 | Commit / PR / GitHub sync | pending | | final response |
 | Closeout | pending | | final response |
@@ -438,11 +438,15 @@ Timeline:
 - 2026-09-30T00:58:19+02:00 The user said `go`, explicitly waiving only the
   unrelated Expo fixture lane. Exact-PR recovery resumed without authorizing
   fixture changes or an admin merge bypass.
+- 2026-09-30T01:00:00+02:00 Recovery commit
+  `29f558fbfd5ff37222d30d006a9fbee24744e9a1` reached the contributor branch.
+  GitHub head, fetched `refs/pr/473`, and local `HEAD` matched; the live body
+  contained exactly one task-plan line and this plan existed at that head.
 
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Exact-PR evidence recovery is active and ready to publish. |
+| Where am I? | Exact-PR recovery is complete; implementation review is active. |
 | Where am I going? | Push the plan and test-isolation fix, update the PR body, then return to autoclosure review. |
 | What is the goal? | Recover and verify PR #473 without changing its product contract. |
 | What have I learned? | The implementation is substantive. One unrelated process-global test mock broke the branch's server-client tests. Expo fixture drift remains outside the PR diff. |

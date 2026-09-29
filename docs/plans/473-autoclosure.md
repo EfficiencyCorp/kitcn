@@ -86,14 +86,14 @@ Start Gates:
 | --- | --- | --- |
 | Immutable PR head fetched | yes | `refs/pr/473` = live `headRefOid` = `424a3bec59d8c9b1accf592ad534ef73ad90e7dc` |
 | Task intake classified | yes | `recoverable`; detailed PR body, three coherent commits, and ten related package files provide a concrete contract, but the body has no task-plan line |
-| Complete task evidence verified | no | Missing at intake. Recovery owns this gate before normal review. |
-| Recoverable task state adopted | yes | Exact-PR task plan `docs/plans/473-optimistic-auth-gate.md` created on the preserved head; body repair and read-back remain pending |
+| Complete task evidence verified | yes | GitHub head, fetched `refs/pr/473`, and local `HEAD` all equal `29f558fbfd5ff37222d30d006a9fbee24744e9a1`; the plan exists at that head and the body has exactly one matching task-plan line |
+| Recoverable task state adopted | yes | Preserved branch, exact-PR plan, recovery fix, task-format body, and immutable-head read-back are live |
 | Active source/plan reconstructed | yes | PR #473 body, commits, changed paths, comments, and checks read from GitHub; immutable head fetched locally |
 | Intended delta and exclusions recorded | yes | Boundaries above mirror the PR contract and forbid new product scope or topology changes |
 | Closure matrix classified | yes | Package/API, changeset, source behavior, feedback, review, repository check, and GitHub delivery apply; fixtures, UI, and agent workflow are currently N/A |
-| Live PR feedback target resolved | conditional | Pending until task evidence reaches the live PR head |
-| Feedback proof checkout bound to PR head | conditional | Pending until task evidence reaches the live PR head |
-| Unfiltered feedback inventory | conditional | Pending until task evidence reaches the live PR head; intake read found two bot comments, no reviews, and no inline comments |
+| Live PR feedback target resolved | yes | PR #473 at recovered head `29f558fbfd5ff37222d30d006a9fbee24744e9a1` |
+| Feedback proof checkout bound to PR head | yes | Local `HEAD`, fetched PR ref, and live OID matched before feedback review |
+| Unfiltered feedback inventory | conditional | Recovery is complete; refresh every feedback surface next |
 | GitHub delivery expectation recorded | yes | Recover exact-PR evidence, push to `EfficiencyCorp:feat/optimistic-auth-gate`, verify, then merge only with an exact-head guard |
 | Active goal checked or created | yes | Active goal points to this plan and names the task-evidence, feedback, proof, check, merge, and receipt threshold |
 | Agent-native pack selected | yes | Required by the autoclosure goal contract |
@@ -105,9 +105,9 @@ Start Gates:
 Closure matrix:
 | Lane | Applies | Owner/proof | Status |
 | --- | --- | --- | --- |
-| task intake classification | pending | immutable-head `complete` / `recoverable` / `absent` evidence | pending |
-| per-PR task ownership | conditional | complete evidence or recovered exact PR + dedicated task plan | pending |
-| recoverable task adoption | conditional | preserve branch + exact-PR `task` + repaired evidence read-back | pending |
+| task intake classification | yes | immutable-head `recoverable` evidence | complete |
+| per-PR task ownership | yes | recovered exact PR + dedicated task plan | complete |
+| recoverable task adoption | yes | preserved branch + exact-PR `task` + repaired evidence read-back | complete |
 | absent-state close | conditional | exact missing-state comment + `CLOSED` read-back | pending |
 | source behavior | pending | pending | pending |
 | package/API/build | pending | pending | pending |
@@ -258,8 +258,8 @@ Phase / pass table:
 | Phase | Status | Evidence | Next |
 | --- | --- | --- | --- |
 | Inventory | complete | immutable head, PR source, comments, checks, and recoverable classification recorded | task evidence repair |
-| Repair | in_progress | plan and suite-isolation fix pass focused tests and typecheck; the user explicitly waived only the unrelated Expo fixture lane | amend and push exact-PR evidence |
-| Review/checks | pending | | delivery |
+| Repair | complete | recovery commit and task-format body are live; local/fetched/live heads match | feedback and source review |
+| Review/checks | in_progress | | delivery |
 | Delivery | pending | | final audit |
 | Closeout | pending | | final |
 
@@ -295,11 +295,15 @@ Timeline:
 - 2026-09-30T00:58:19+02:00 The user said `go`, explicitly waiving only the
   unrelated Expo fixture lane. Recovery resumed. This does not authorize an
   admin merge bypass or unrelated fixture changes.
+- 2026-09-30T01:00:00+02:00 Recovery commit
+  `29f558fbfd5ff37222d30d006a9fbee24744e9a1` reached the contributor branch.
+  GitHub head, fetched `refs/pr/473`, and local `HEAD` matched; the live body
+  contained exactly one task-plan line and the plan existed at that head.
 
 Reboot status:
 | Question | Answer |
 | --- | --- |
-| Where am I? | Recovery is active; exact-PR evidence is ready to publish. |
+| Where am I? | Recovery is complete; live feedback and source review are active. |
 | Where am I going? | Push exact task evidence, then review, feedback, final checks, guarded merge, and final audit. |
 | What is the goal? | Merge only a fully recovered and verified PR #473. |
 | What have I learned? | The PR is recoverable. Its test suite had one process-global mock leak. The remaining check failure is unrelated Expo fixture drift. |
