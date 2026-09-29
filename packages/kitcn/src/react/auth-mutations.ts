@@ -19,7 +19,7 @@ import {
   useAuthStore,
 } from './auth-store';
 import { useConvexQueryClient } from './context';
-import { isAuthStoreTripped } from './identity-guard-trip';
+import { isDocumentTripped } from './identity-guard-trip';
 
 export { AuthMutationError, isAuthMutationError } from '../crpc/auth-error';
 
@@ -61,6 +61,18 @@ const authStateTimeoutError = () =>
     status: 401,
     statusText: 'UNAUTHORIZED',
   });
+
+// A tripped identity guard quarantined this document (another account took
+// over): signing in here would only publish into a dead end, so it fails.
+const assertDocumentNotTripped = () => {
+  if (!isDocumentTripped()) return;
+  throw new AuthMutationError({
+    code: 'TOKEN_IDENTITY_CHANGED',
+    message: 'This page switched accounts. Reload it to sign in.',
+    status: 401,
+    statusText: 'UNAUTHORIZED',
+  });
+};
 
 const ensureAuth = async (store: AuthStore) => {
   if (await waitForAuth(store)) {
@@ -308,6 +320,7 @@ export function createAuthMutations(
         if (typeof signInSocial !== 'function') {
           throw new Error('Auth client does not expose signIn.social');
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signInSocial,
           withDisabledSessionSignal(args)
@@ -315,8 +328,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
-        // A tripped identity guard quarantined this document: publish nothing.
-        if (isAuthStoreTripped(authStoreApi)) return res;
+        // The document may have tripped while the request was in flight.
+        assertDocumentNotTripped();
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
@@ -337,6 +350,7 @@ export function createAuthMutations(
         if (typeof signIn !== 'function') {
           throw new Error(`Auth client does not expose signIn.${signInMethod}`);
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signIn,
           withDisabledSessionSignal(args)
@@ -344,8 +358,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
-        // A tripped identity guard quarantined this document: publish nothing.
-        if (isAuthStoreTripped(authStoreApi)) return res;
+        // The document may have tripped while the request was in flight.
+        assertDocumentNotTripped();
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
@@ -365,6 +379,7 @@ export function createAuthMutations(
         if (typeof signUpEmail !== 'function') {
           throw new Error('Auth client does not expose signUp.email');
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signUpEmail,
           withDisabledSessionSignal(args)
@@ -372,8 +387,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
-        // A tripped identity guard quarantined this document: publish nothing.
-        if (isAuthStoreTripped(authStoreApi)) return res;
+        // The document may have tripped while the request was in flight.
+        assertDocumentNotTripped();
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);

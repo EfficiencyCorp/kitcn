@@ -29,9 +29,9 @@ import {
   useAuthValue,
 } from '../react/auth-store';
 import {
-  isClientTripped,
-  markAuthStoreTripped,
-  markIdentityGuardTripped,
+  isDocumentTripped,
+  subscribeDocumentTrip,
+  tripDocument,
 } from '../react/identity-guard-trip';
 import type { ConvexAuthProviderClient } from './types';
 
@@ -392,9 +392,9 @@ export function ConvexAuthProvider({
   // published: a token for another identity never enters the store, never
   // opens the optimistic gate and trips the guard once mounted. The store
   // hydrates from these values once, so the decision is taken once too.
-  // A provider over a client whose guard already tripped in this document
-  // starts tripped: it publishes no token and never opens the gate.
-  const [inheritedTrip] = useState(() => isClientTripped(client));
+  // A provider mounted after the document tripped starts tripped: it
+  // publishes no token and never opens the gate, whatever its client.
+  const [inheritedTrip] = useState(isDocumentTripped);
   const [refusedInitialToken] = useState(
     () =>
       !inheritedTrip &&
@@ -553,22 +553,34 @@ function ConvexAuthProviderInner({
   // announce it a second time.
   const announcedTokenRef = useRef<string | null>(null);
 
-  // Tripping is terminal: nothing is handed out any more, the store publishes
-  // unauthenticated (which clears auth-bound queries, see CRPCProviderInner),
-  // and the client is closed before the app's callback runs, so a throwing
-  // callback cannot keep the old client alive.
-  const tripGuard = useCallback(() => {
-    const guard = identityGuardRef.current!;
-    guard.tripped = true;
-    if (guard.tripSettled) return;
-    guard.tripSettled = true;
-    markIdentityGuardTripped(client, authStore);
+  // A tripped document is terminal for this provider: nothing is handed out
+  // any more, and the store publishes unauthenticated (which clears
+  // auth-bound queries, see CRPCProviderInner).
+  const quarantine = useCallback(() => {
+    identityGuardRef.current!.tripped = true;
     authStore.set('token', null);
     authStore.set('expiresAt', null);
     authStore.set('sessionSyncGraceUntil', null);
     authStore.set('isAuthenticated', false);
     authStore.set('isLoading', false);
     setGuardTripped(true);
+  }, [authStore]);
+
+  useEffect(() => {
+    if (isDocumentTripped()) quarantine();
+    return subscribeDocumentTrip(quarantine);
+  }, [quarantine]);
+
+  // The provider whose guard refused a token trips the document, closes its
+  // client and then runs the app's callback, so a throwing callback cannot
+  // keep the old client alive.
+  const tripGuard = useCallback(() => {
+    const guard = identityGuardRef.current!;
+    guard.tripped = true;
+    if (guard.tripSettled) return;
+    guard.tripSettled = true;
+    quarantine();
+    tripDocument();
     try {
       void Promise.resolve(client.close()).catch(() => {});
     } catch {
@@ -579,12 +591,11 @@ function ConvexAuthProviderInner({
     } catch (error) {
       console.error('[ConvexAuthProvider] onTokenIdentityChange threw', error);
     }
-  }, [authStore, client]);
+  }, [client, quarantine]);
 
   useEffect(() => {
     if (refusedInitialToken) tripGuard();
-    if (inheritedTrip) markAuthStoreTripped(authStore);
-  }, [authStore, inheritedTrip, refusedInitialToken, tripGuard]);
+  }, [refusedInitialToken, tripGuard]);
 
   // `announce`: whether `onTokenIdentityAdmitted` hears this admission. A
   // fresh token is admitted and announced in the same step that caches it;
@@ -630,6 +641,7 @@ function ConvexAuthProviderInner({
     // session. An opaque session token proves nothing before it is used, so
     // it is not restored while an identity is established. Nothing is
     // restored after a trip.
+    if (isDocumentTripped()) return;
     if (onTokenIdentityChangeRef.current && persistedToken) {
       const guard = identityGuardRef.current!;
       if (guard.tripped) return;
@@ -839,7 +851,12 @@ function ConvexAuthProviderInner({
           // Convex asked for a fresh token, but dropping auth to null here can
           // briefly flip to unauthenticated before Better Auth session settles.
           // After a trip nothing is written back.
-          if (!freshToken && cachedJwt && !identityGuardRef.current?.tripped) {
+          if (
+            !freshToken &&
+            cachedJwt &&
+            !identityGuardRef.current?.tripped &&
+            !isDocumentTripped()
+          ) {
             authStore.set('token', cachedJwt);
             authStore.set('expiresAt', decodeJwtExp(cachedJwt));
             return cachedJwt;
@@ -889,7 +906,11 @@ function ConvexAuthProviderInner({
   // guard refused.
   const guardedFetchAccessToken = useCallback(
     async (args: { forceRefreshToken?: boolean } = {}) => {
-      if (identityGuardRef.current?.tripped) return null;
+      // Read at call time: a trip elsewhere in the document applies at once,
+      // to Convex and HTTP headers alike.
+      if (isDocumentTripped() || identityGuardRef.current?.tripped) {
+        return null;
+      }
       const token = await fetchAccessToken(args);
       if (!token) return null;
       const announced = announcedTokenRef.current === token;

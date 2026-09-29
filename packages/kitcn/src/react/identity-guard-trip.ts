@@ -1,26 +1,29 @@
 'use client';
 
-import type { AuthStore } from './auth-store';
+// A tripped identity guard quarantines the whole document, browser only: every
+// mounted provider publishes terminal unauthenticated and answers null, a
+// provider or Convex client created later starts tripped, and sign-in
+// mutations fail. It is never set on the server, where one module serves many
+// requests. A reload clears it.
+let tripped = false;
+const listeners = new Set<() => void>();
 
-// A tripped identity guard quarantines the document for its lifetime, not only
-// the provider that tripped: a later provider over the same Convex client
-// starts tripped, and auth mutations on a tripped store publish nothing.
-const trippedClients = new WeakSet<object>();
-const trippedStores = new WeakSet<object>();
+export const isDocumentTripped = () => tripped;
 
-export const markIdentityGuardTripped = (
-  client: object,
-  authStore: AuthStore
-) => {
-  trippedClients.add(client);
-  markAuthStoreTripped(authStore);
+export const tripDocument = () => {
+  if (typeof window === 'undefined' || tripped) return;
+  tripped = true;
+  for (const listener of [...listeners]) listener();
 };
 
-export const markAuthStoreTripped = (authStore: AuthStore) => {
-  if (authStore.store) trippedStores.add(authStore.store);
+export const subscribeDocumentTrip = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
 
-export const isClientTripped = (client: object) => trippedClients.has(client);
-
-export const isAuthStoreTripped = (authStore: AuthStore) =>
-  !!authStore.store && trippedStores.has(authStore.store);
+/** Test-only: clear the document trip between tests. */
+export const resetDocumentTripForTests = () => {
+  tripped = false;
+};

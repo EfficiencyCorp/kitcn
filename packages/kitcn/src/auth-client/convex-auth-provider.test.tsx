@@ -1,5 +1,6 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { AuthMutationError } from '../crpc/auth-error';
 import { createAuthMutations } from '../react/auth-mutations';
 import { writeAuthSessionFallbackToken } from '../react/auth-session-fallback';
 import type { AuthStore } from '../react/auth-store';
@@ -10,6 +11,7 @@ import {
   useConvexAuthRecovery,
   useFetchAccessToken,
 } from '../react/auth-store';
+import { resetDocumentTripForTests } from '../react/identity-guard-trip';
 import { ConvexAuthProvider } from './convex-auth-provider';
 
 const makeJwt = (expSecondsFromNow: number) => {
@@ -39,6 +41,8 @@ describe('ConvexAuthProvider', () => {
   });
 
   afterEach(() => {
+    // The document trip is module state: never let one test's trip leak.
+    resetDocumentTripForTests();
     window.sessionStorage.clear();
     try {
       window.history.replaceState({}, '', originalHref);
@@ -2213,7 +2217,9 @@ describe('ConvexAuthProvider', () => {
       });
       unsubscribe();
 
-      expect(results).toEqual([tokenForA, null]);
+      // B is refused before it is ever cached. Its refusal trips the
+      // document, so the first provider's hand-out answers null too.
+      expect(results).toEqual([null, null]);
       expect(published).not.toContain(tokenForB);
       expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
       expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(0);
@@ -2266,7 +2272,7 @@ describe('ConvexAuthProvider', () => {
       expect(convex.close).toHaveBeenCalledTimes(1);
     });
 
-    test('a sign-in after a trip publishes neither a token nor authenticated', async () => {
+    test('a sign-in on a tripped document surfaces an error and publishes nothing', async () => {
       const signedIn = identityJwt('user_a', 'session_a', 7200);
       const authClientExtras = {
         signIn: { email: async () => ({ data: { token: signedIn } }) },
@@ -2295,10 +2301,20 @@ describe('ConvexAuthProvider', () => {
       const options = harness.result.current.extra as {
         mutationFn: (args: unknown) => Promise<unknown>;
       };
+      let failure: unknown;
       await act(async () => {
-        await options.mutationFn({ email: 'a@example.invalid', password: 'x' });
+        failure = await options
+          .mutationFn({ email: 'a@example.invalid', password: 'x' })
+          .then(
+            () => null,
+            (error: unknown) => error
+          );
       });
       unsubscribeAuth();
+      expect(failure).toBeInstanceOf(AuthMutationError);
+      expect((failure as AuthMutationError).code).toBe(
+        'TOKEN_IDENTITY_CHANGED'
+      );
       unsubscribeToken();
 
       expect(published).not.toContain(true);
@@ -2552,6 +2568,69 @@ describe('ConvexAuthProvider', () => {
 
       expect(second.result.current.auth.isAuthenticated).toBe(false);
       expect(second.result.current.auth.isLoading).toBe(true);
+    });
+
+    test('a remount with a fresh client cannot reopen the document after a trip', async () => {
+      const first = convexHarness({
+        initialToken: identityJwt('user_a', 'session_a'),
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      await first.fetch(false);
+      expect(await first.fetch(true)).toBeNull();
+      first.unmount();
+
+      const second = convexHarness({
+        baseline: 'user_a|session_a',
+        initialToken: identityJwt('user_a', 'session_a'),
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+
+      expect(second.result.current.store.get('token')).toBeNull();
+      expect(second.result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('two mounted providers sharing a client: tripping one quarantines the other', async () => {
+      const tokenForA = identityJwt('user_a', 'session_a');
+      const convex = makeConvexClient();
+      const first = convexHarness({
+        convex,
+        initialToken: tokenForA,
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      const second = convexHarness({
+        convex,
+        extraHook: () => useFetchAccessToken(),
+        initialToken: tokenForA,
+      });
+      await flush();
+      const httpFetcher = second.result.current.extra as (args?: {
+        forceRefreshToken?: boolean;
+      }) => Promise<string | null>;
+      let before: string | null = null;
+      await act(async () => {
+        before = await httpFetcher();
+      });
+      expect(before).toBe(tokenForA);
+
+      let refused: string | null = 'unset';
+      await act(async () => {
+        refused = await convex.bindings[0]!.fetchToken({
+          forceRefreshToken: true,
+        });
+      });
+      expect(refused).toBeNull();
+
+      let after: string | null = 'unset';
+      await act(async () => {
+        after = await httpFetcher();
+      });
+      expect(after).toBeNull();
+      expect(second.result.current.store.get('token')).toBeNull();
+      expect(second.result.current.store.get('isAuthenticated')).toBe(false);
     });
 
     test("refusals hidden behind the SDK's transparent retry are all remembered", async () => {
