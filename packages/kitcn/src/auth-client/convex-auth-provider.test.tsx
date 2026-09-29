@@ -1,5 +1,6 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { createAuthMutations } from '../react/auth-mutations';
 import { writeAuthSessionFallbackToken } from '../react/auth-session-fallback';
 import type { AuthStore } from '../react/auth-store';
 import {
@@ -1923,54 +1924,74 @@ describe('ConvexAuthProvider', () => {
       return `${payload.sub}|${payload.sessionId}`;
     };
 
+    type Binding = {
+      fetchToken: (args: {
+        forceRefreshToken: boolean;
+      }) => Promise<string | null>;
+      onChange: (isAuthenticated: boolean) => void;
+    };
+
     /**
-     * A provider over a Convex client stub that records every binding (the
-     * fetcher and confirmation callback Convex receives), so a test drives
-     * the real confirmation transitions. `tokens` are what the token endpoint
-     * answers, in order.
+     * A Convex client stub that records every binding (the fetcher and
+     * confirmation callback Convex receives), so a test drives the real
+     * confirmation transitions. Several providers may share one.
      */
-    const convexHarness = ({
-      baseline,
-      guard = true,
-      initialToken,
-      onTokenIdentityAdmitted,
-      onTokenIdentityChange = mock(() => {}),
-      optimisticAuth = false,
-      session = 'active',
-      tokens = [],
-    }: {
-      baseline?: string | null | (() => string | null);
-      guard?: boolean;
-      initialToken?: string;
-      onTokenIdentityAdmitted?: (token: string) => void;
-      onTokenIdentityChange?: () => void;
-      optimisticAuth?: boolean;
-      session?: 'active' | 'none' | 'pending';
-      tokens?: Array<string | null>;
-    }) => {
-      const bindings: Array<{
-        fetchToken: (args: {
-          forceRefreshToken: boolean;
-        }) => Promise<string | null>;
-        onChange: (isAuthenticated: boolean) => void;
-      }> = [];
+    const makeConvexClient = () => {
+      const bindings: Binding[] = [];
       const close = mock(async () => {});
       const client = {
         setAuth: (
-          fetchToken: (typeof bindings)[number]['fetchToken'],
-          onChange: (typeof bindings)[number]['onChange']
+          fetchToken: Binding['fetchToken'],
+          onChange: Binding['onChange']
         ) => {
           bindings.push({ fetchToken, onChange });
         },
         clearAuth: () => {},
         close,
       };
+      return { bindings, client, close };
+    };
+
+    /**
+     * A provider over `convex` (a fresh client stub by default). `tokens` are
+     * what the token endpoint answers, in order.
+     */
+    const convexHarness = ({
+      authClientExtras = {},
+      baseline,
+      convex = makeConvexClient(),
+      extraHook = () => null,
+      guard = true,
+      initialToken,
+      onTokenIdentityAdmitted,
+      onTokenIdentityChange = mock(() => {}),
+      optimisticAuth = false,
+      persistedSessionAnswer = { data: null, error: null },
+      session = 'active',
+      tokens = [],
+    }: {
+      authClientExtras?: Record<string, unknown>;
+      baseline?: string | null | (() => string | null);
+      convex?: ReturnType<typeof makeConvexClient>;
+      extraHook?: () => unknown;
+      guard?: boolean;
+      initialToken?: string;
+      onTokenIdentityAdmitted?: (token: string) => void;
+      onTokenIdentityChange?: () => void;
+      optimisticAuth?: boolean;
+      persistedSessionAnswer?: unknown;
+      session?: 'active' | 'none' | 'pending';
+      tokens?: Array<string | null>;
+    }) => {
+      const { bindings, client, close } = convex;
       const queue = [...tokens];
       const convexToken = mock(async () => ({
         data: { token: queue.shift() ?? null },
       }));
       const getSession = mock(async () => null);
-      const $fetch = mock(async () => ({ data: null, error: null }));
+      const $fetch = mock(
+        async (..._args: unknown[]) => persistedSessionAnswer
+      );
       const sessionResult =
         session === 'active'
           ? {
@@ -1985,6 +2006,7 @@ describe('ConvexAuthProvider', () => {
         $fetch,
         updateSession: () => {},
         crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+        ...authClientExtras,
       };
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ConvexAuthProvider
@@ -2003,7 +2025,7 @@ describe('ConvexAuthProvider', () => {
       const view = renderHook(
         () => {
           recovery = useConvexAuthRecovery();
-          return { auth: useAuth(), store: useAuthStore() };
+          return { auth: useAuth(), extra: extraHook(), store: useAuthStore() };
         },
         { wrapper }
       );
@@ -2020,6 +2042,7 @@ describe('ConvexAuthProvider', () => {
         getSession,
         onTokenIdentityChange,
         result: view.result,
+        unmount: view.unmount,
         fetch: async (forceRefreshToken: boolean) => {
           let token: string | null = null;
           await act(async () => {
@@ -2176,6 +2199,90 @@ describe('ConvexAuthProvider', () => {
       expect(harness.result.current.store.get('isAuthenticated')).toBe(false);
       expect(harness.result.current.store.get('isLoading')).toBe(false);
       await harness.report(true);
+      expect(harness.result.current.store.get('isAuthenticated')).toBe(false);
+    });
+
+    test('a later provider over a tripped client starts tripped', async () => {
+      const convex = makeConvexClient();
+      const first = convexHarness({
+        convex,
+        initialToken: identityJwt('user_a', 'session_a'),
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      await first.fetch(false);
+      expect(await first.fetch(true)).toBeNull();
+      first.unmount();
+
+      // A remount in the same document, over the same (closed) client.
+      const second = convexHarness({
+        baseline: 'user_a|session_a',
+        convex,
+        initialToken: identityJwt('user_a', 'session_a'),
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+
+      expect(second.result.current.store.get('token')).toBeNull();
+      expect(second.result.current.auth.isAuthenticated).toBe(false);
+      expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+      expect(convex.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('a sign-in after a trip publishes neither a token nor authenticated', async () => {
+      const signedIn = identityJwt('user_a', 'session_a', 7200);
+      const authClientExtras = {
+        signIn: { email: async () => ({ data: { token: signedIn } }) },
+      };
+      const mutations = createAuthMutations(authClientExtras as any);
+      const harness = convexHarness({
+        authClientExtras,
+        extraHook: () => mutations.useSignInMutationOptions(),
+        initialToken: identityJwt('user_a', 'session_a'),
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      await harness.fetch(false);
+      expect(await harness.fetch(true)).toBeNull();
+
+      const published: unknown[] = [];
+      const store = harness.result.current.store;
+      const unsubscribeAuth = store.subscribe(
+        'isAuthenticated',
+        (value: boolean) => published.push(value)
+      );
+      const unsubscribeToken = store.subscribe(
+        'token',
+        (value: string | null) => published.push(value)
+      );
+      const options = harness.result.current.extra as {
+        mutationFn: (args: unknown) => Promise<unknown>;
+      };
+      await act(async () => {
+        await options.mutationFn({ email: 'a@example.invalid', password: 'x' });
+      });
+      unsubscribeAuth();
+      unsubscribeToken();
+
+      expect(published).not.toContain(true);
+      expect(published).not.toContain(signedIn);
+      expect(store.get('isAuthenticated')).toBe(false);
+      expect(store.get('token')).toBeNull();
+    });
+
+    test('nothing writes a token back after a trip, not even the hydration fallback', async () => {
+      const tokenForA = identityJwt('user_a', 'session_a');
+      const harness = convexHarness({
+        initialToken: tokenForA,
+        session: 'pending',
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+
+      expect(await harness.fetch(true)).toBeNull();
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(harness.result.current.store.get('token')).toBeNull();
       expect(harness.result.current.store.get('isAuthenticated')).toBe(false);
     });
 

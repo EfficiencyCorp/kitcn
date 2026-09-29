@@ -19,6 +19,7 @@ import {
   useAuthStore,
 } from './auth-store';
 import { useConvexQueryClient } from './context';
+import { isAuthStoreTripped } from './identity-guard-trip';
 
 export { AuthMutationError, isAuthMutationError } from '../crpc/auth-error';
 
@@ -314,6 +315,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
+        // A tripped identity guard quarantined this document: publish nothing.
+        if (isAuthStoreTripped(authStoreApi)) return res;
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
@@ -341,6 +344,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
+        // A tripped identity guard quarantined this document: publish nothing.
+        if (isAuthStoreTripped(authStoreApi)) return res;
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
@@ -367,6 +372,8 @@ export function createAuthMutations(
         if (res?.error) {
           throw toAuthMutationError(res.error);
         }
+        // A tripped identity guard quarantined this document: publish nothing.
+        if (isAuthStoreTripped(authStoreApi)) return res;
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);

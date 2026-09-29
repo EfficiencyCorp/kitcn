@@ -28,6 +28,11 @@ import {
   useAuthStore,
   useAuthValue,
 } from '../react/auth-store';
+import {
+  isClientTripped,
+  markAuthStoreTripped,
+  markIdentityGuardTripped,
+} from '../react/identity-guard-trip';
 import type { ConvexAuthProviderClient } from './types';
 
 type AuthClientFetch = ConvexAuthProviderClient & {
@@ -382,8 +387,12 @@ export function ConvexAuthProvider({
   // published: a token for another identity never enters the store, never
   // opens the optimistic gate and trips the guard once mounted. The store
   // hydrates from these values once, so the decision is taken once too.
+  // A provider over a client whose guard already tripped in this document
+  // starts tripped: it publishes no token and never opens the gate.
+  const [inheritedTrip] = useState(() => isClientTripped(client));
   const [refusedInitialToken] = useState(
     () =>
+      !inheritedTrip &&
       onTokenIdentityChange !== undefined &&
       !!initialToken &&
       refusesHeldToken(
@@ -395,13 +404,13 @@ export function ConvexAuthProvider({
   // Memoize decoded JWT to avoid re-parsing on every render
   const tokenValues = useMemo(
     () =>
-      refusedInitialToken
+      refusedInitialToken || inheritedTrip
         ? { expiresAt: null, token: null }
         : {
             expiresAt: initialToken ? decodeJwtExp(initialToken) : null,
             token: initialToken ?? null,
           },
-    [initialToken, refusedInitialToken]
+    [initialToken, inheritedTrip, refusedInitialToken]
   );
 
   // AuthProvider wraps inner so useAuthStore() is available inside
@@ -417,6 +426,7 @@ export function ConvexAuthProvider({
         authClient={authClient}
         client={client}
         convexQueryClient={convexQueryClient}
+        inheritedTrip={inheritedTrip}
         onTokenIdentityAdmitted={onTokenIdentityAdmitted}
         onTokenIdentityChange={onTokenIdentityChange}
         optimisticAuth={optimisticAuth}
@@ -438,6 +448,7 @@ function ConvexAuthProviderInner({
   client,
   authClient,
   convexQueryClient,
+  inheritedTrip,
   optimisticAuth,
   onTokenIdentityChange,
   onTokenIdentityAdmitted,
@@ -448,6 +459,7 @@ function ConvexAuthProviderInner({
   client: ConvexReactClient;
   authClient: ConvexAuthProviderClient;
   convexQueryClient?: ConvexAuthProviderQueryClient;
+  inheritedTrip: boolean;
   optimisticAuth: boolean;
   onTokenIdentityChange?: () => void;
   onTokenIdentityAdmitted?: (token: string) => void;
@@ -525,10 +537,13 @@ function ConvexAuthProviderInner({
       typeof tokenIdentityBaseline === 'function'
         ? () => resolveIdentityBaseline(tokenIdentityBaselineRef.current)
         : null,
-    tripped: refusedInitialToken,
-    tripSettled: false,
+    tripped: refusedInitialToken || inheritedTrip,
+    // An inherited trip already ran its side effects (close, callback).
+    tripSettled: inheritedTrip,
   };
-  const [guardTripped, setGuardTripped] = useState(refusedInitialToken);
+  const [guardTripped, setGuardTripped] = useState(
+    refusedInitialToken || inheritedTrip
+  );
   // The token Convex received last, so a refusal is bound to what it refused.
   const submittedTokenRef = useRef<string | null>(null);
   // A fresh token announced when it was admitted, so its hand-out does not
@@ -544,6 +559,7 @@ function ConvexAuthProviderInner({
     guard.tripped = true;
     if (guard.tripSettled) return;
     guard.tripSettled = true;
+    markIdentityGuardTripped(client, authStore);
     authStore.set('token', null);
     authStore.set('expiresAt', null);
     authStore.set('sessionSyncGraceUntil', null);
@@ -564,7 +580,8 @@ function ConvexAuthProviderInner({
 
   useEffect(() => {
     if (refusedInitialToken) tripGuard();
-  }, [refusedInitialToken, tripGuard]);
+    if (inheritedTrip) markAuthStoreTripped(authStore);
+  }, [authStore, inheritedTrip, refusedInitialToken, tripGuard]);
 
   // `announce`: whether `onTokenIdentityAdmitted` hears this admission. A
   // fresh token is admitted and announced in the same step that caches it;
@@ -810,7 +827,8 @@ function ConvexAuthProviderInner({
           // During hydration, keep a cached JWT on transient forced-refresh failure.
           // Convex asked for a fresh token, but dropping auth to null here can
           // briefly flip to unauthenticated before Better Auth session settles.
-          if (!freshToken && cachedJwt) {
+          // After a trip nothing is written back.
+          if (!freshToken && cachedJwt && !identityGuardRef.current?.tripped) {
             authStore.set('token', cachedJwt);
             authStore.set('expiresAt', decodeJwtExp(cachedJwt));
             return cachedJwt;
