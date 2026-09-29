@@ -235,9 +235,6 @@ export type DecorateInfiniteQuery<T extends FunctionReference<'query'>> = {
 // ============================================================================
 
 /**
- * Decorated mutation procedure with mutationOptions and mutationKey methods.
- */
-/**
  * Convex-native optimistic update for a cRPC mutation. It edits Convex's local
  * query store, which the query client reads, so Convex rolls it back when the
  * mutation fails. Args and query values are in their wire shape.
@@ -246,6 +243,9 @@ export type ConvexOptimisticUpdateOption<Args extends Record<string, any>> = {
   optimisticUpdate?: OptimisticUpdate<Args>;
 };
 
+/**
+ * Decorated mutation procedure with mutationOptions and mutationKey methods.
+ */
 export type DecorateMutation<T extends FunctionReference<'mutation'>> = {
   mutationOptions: (
     opts?: DistributiveOmit<
