@@ -33,7 +33,6 @@ import {
   markAuthStoreTripped,
   markIdentityGuardTripped,
 } from '../react/identity-guard-trip';
-import { TokenRefusals } from './token-refusals';
 import type { ConvexAuthProviderClient } from './types';
 
 type AuthClientFetch = ConvexAuthProviderClient & {
@@ -550,10 +549,6 @@ function ConvexAuthProviderInner({
   const [guardTripped, setGuardTripped] = useState(
     refusedInitialToken || inheritedTrip
   );
-  // Tokens handed to Convex and those it refused, for the optimistic gate.
-  const refusalsRef = useRef<TokenRefusals | null>(null);
-  refusalsRef.current ??= new TokenRefusals();
-  const refusals = refusalsRef.current;
   // A fresh token announced when it was admitted, so its hand-out does not
   // announce it a second time.
   const announcedTokenRef = useRef<string | null>(null);
@@ -905,17 +900,6 @@ function ConvexAuthProviderInner({
     [fetchAccessToken, admitToken]
   );
 
-  // What Convex receives: recorded, so a refusal covers every token Convex
-  // tried since its last confirmation.
-  const convexFetchAccessToken = useCallback(
-    async (args: { forceRefreshToken?: boolean } = {}) => {
-      const token = await guardedFetchAccessToken(args);
-      if (token) refusals.submitted(token);
-      return token;
-    },
-    [guardedFetchAccessToken, refusals]
-  );
-
   // Create useAuth hook for ConvexProviderWithAuth
   // The hook itself is stable - it reads current values from refs
   // This prevents Convex SDK from calling setAuth() on every session refetch
@@ -928,10 +912,10 @@ function ConvexAuthProviderInner({
         isLoading: isPendingRef.current && !token,
         // If Better Auth confirms no session, stale JWT should not keep auth=true.
         isAuthenticated: sessionMissing ? false : hasSession || token !== null,
-        fetchAccessToken: convexFetchAccessToken,
+        fetchAccessToken: guardedFetchAccessToken,
       };
     },
-    [convexFetchAccessToken, authStore]
+    [guardedFetchAccessToken, authStore]
   );
 
   return (
@@ -942,9 +926,9 @@ function ConvexAuthProviderInner({
       >
         <AuthStateSync
           canOpenGate={canOpenGate}
+          client={client}
           guardTripped={guardTripped}
           optimisticAuth={optimisticAuth}
-          refusals={refusals}
         >
           {children}
         </AuthStateSync>
@@ -968,37 +952,35 @@ function ConvexAuthProviderInner({
 function AuthStateSync({
   canOpenGate,
   children,
+  client,
   guardTripped,
   optimisticAuth = false,
-  refusals,
 }: {
   canOpenGate: (token: string) => boolean;
   children: ReactNode;
+  client: ConvexReactClient;
   guardTripped: boolean;
   optimisticAuth?: boolean;
-  refusals: TokenRefusals;
 }) {
   const { isLoading: convexIsLoading, isAuthenticated } = useConvexAuth();
   const authStore = useAuthStore();
   const token = useAuthValue('token');
+  // Whether Convex was confirming a held token on the previous run.
+  const confirmingRef = useRef(false);
 
   useEffect(() => {
-    // A refusal covers the tokens Convex received, not whatever the store
-    // holds by now; none of them opens the optimistic gate again.
-    if (!convexIsLoading && isAuthenticated) refusals.confirmed();
-    if (
-      optimisticAuth &&
-      isTokenRejectedByConvex({ convexIsLoading, isAuthenticated, token })
-    ) {
-      refusals.refused();
+    // The client's first auth result (confirmed, or refused while it was
+    // confirming a held token) ends its optimistic window for its lifetime.
+    if (!convexIsLoading && (isAuthenticated || confirmingRef.current)) {
+      settledClients.add(client);
     }
+    confirmingRef.current = convexIsLoading && token !== null;
     const gate = resolveAuthGate({
       canOpenGate,
       convexIsLoading,
       guardTripped,
       isAuthenticated,
-      optimisticAuth,
-      refusals,
+      optimisticWindow: optimisticAuth && !settledClients.has(client),
       token,
     });
 
@@ -1006,11 +988,11 @@ function AuthStateSync({
     authStore.set('isAuthenticated', gate.isAuthenticated);
   }, [
     canOpenGate,
+    client,
     convexIsLoading,
     guardTripped,
     isAuthenticated,
     optimisticAuth,
-    refusals,
     token,
     authStore,
   ]);
@@ -1114,46 +1096,41 @@ function admitTokenIdentity(guard: IdentityGuard, token: string): boolean {
   return true;
 }
 
+/**
+ * Convex clients that have reported an auth result. The optimistic window of
+ * a client lasts only until its first result: after that, the gate follows
+ * Convex's confirmed state for the client's lifetime, remounts included.
+ */
+const settledClients = new WeakSet<object>();
+
 type AuthGateInput = {
   canOpenGate: (token: string) => boolean;
   convexIsLoading: boolean;
   guardTripped: boolean;
   isAuthenticated: boolean;
-  optimisticAuth: boolean;
-  refusals: Pick<TokenRefusals, 'has'>;
+  /** `optimisticAuth`, while the client has not reported an auth result. */
+  optimisticWindow: boolean;
   token: string | null;
 };
-
-/**
- * Convex has settled on "not authenticated" while a token is still held: the
- * server refused it (or refused its refresh).
- */
-function isTokenRejectedByConvex({
-  convexIsLoading,
-  isAuthenticated,
-  token,
-}: Pick<AuthGateInput, 'convexIsLoading' | 'isAuthenticated' | 'token'>) {
-  return !!token && !convexIsLoading && !isAuthenticated;
-}
 
 /**
  * The auth state published to the store, which is what every query gate reads.
  *
  * Without `optimisticAuth` this is the confirmed state: queries wait until
- * Convex has confirmed the token. With it, a held, unexpired JWT that Convex
- * has not refused yet counts as authenticated while Convex confirms it, so
- * auth-bound queries subscribe at once; Convex sends them after Authenticate on
- * the same socket, and a refused token closes the socket before any of them is
- * evaluated. When Convex refuses the token, `isAuthenticated` falls back to
- * false, which resets auth-bound queries (see `CRPCProviderInner`).
+ * Convex has confirmed the token. With it, until the Convex client reports its
+ * first auth result, a held, unexpired JWT counts as authenticated while
+ * Convex confirms it, so auth-bound queries subscribe at once; Convex sends
+ * them after Authenticate on the same socket, and a refused token closes the
+ * socket before any of them is evaluated. When Convex refuses the token,
+ * `isAuthenticated` falls back to false, which resets auth-bound queries (see
+ * `CRPCProviderInner`), and the window is over: no token reopens it.
  */
 function resolveAuthGate({
   canOpenGate,
   convexIsLoading,
   guardTripped,
   isAuthenticated,
-  optimisticAuth,
-  refusals,
+  optimisticWindow,
   token,
 }: AuthGateInput): { isAuthenticated: boolean; isLoading: boolean } {
   // A tripped identity guard is terminal: unauthenticated, whatever Convex says.
@@ -1161,10 +1138,9 @@ function resolveAuthGate({
     return { isAuthenticated: false, isLoading: false };
   }
   if (
-    optimisticAuth &&
+    optimisticWindow &&
     convexIsLoading &&
     token !== null &&
-    !refusals.has(token) &&
     isOptimisticToken(token) &&
     canOpenGate(token)
   ) {

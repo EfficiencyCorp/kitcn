@@ -2457,8 +2457,102 @@ describe('ConvexAuthProvider', () => {
           });
           await new Promise((r) => setTimeout(r, 0));
         });
-      return { bindings, client, close, refuse };
+      // The server confirms the token it was last sent.
+      const confirm = () =>
+        act(async () => {
+          manager.onTransition({
+            clientClockSkew: 0,
+            endVersion: { identity: authVersion },
+            startVersion: { identity: authVersion - 1 },
+          });
+          await new Promise((r) => setTimeout(r, 0));
+        });
+      return { bindings, client, close, confirm, refuse };
     };
+
+    test('a refused token after a prior confirmation never reopens the gate', async () => {
+      const tokenA = makeJwt(3600);
+      const tokenB = makeJwt(3500);
+      // Under a minute left: the recovery fetch goes back to the endpoint.
+      const tokenC = makeJwt(30);
+      const convex = await makeManagedConvexClient();
+      const harness = convexHarness({
+        convex,
+        guard: false,
+        initialToken: tokenA,
+        optimisticAuth: true,
+        tokens: [tokenB, tokenC, null, tokenB],
+      });
+      await flush();
+      // The server confirms A; Convex refreshes to B.
+      await convex.confirm();
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(true);
+
+      // The server refuses B; the SDK retries with C; the server refuses C.
+      await convex.refuse();
+      await convex.refuse();
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+
+      // Recovery obtains B again while Convex confirms it.
+      await harness.recover();
+      await flush();
+      expect(harness.result.current.store.get('token')).toBe(tokenB);
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('no number of refusals lets a refused token reopen the gate', async () => {
+      const tokens = Array.from({ length: 17 }, (_, index) =>
+        makeJwt(3600 - index)
+      );
+      const harness = convexHarness({
+        guard: false,
+        initialToken: tokens[0],
+        optimisticAuth: true,
+        tokens: [...tokens.slice(1), tokens[0]!],
+      });
+      await flush();
+      expect(await harness.fetch(false)).toBe(tokens[0]);
+      await harness.report(false);
+      for (const token of tokens.slice(1)) {
+        await harness.recover();
+        expect(await harness.fetch(true)).toBe(token);
+        await harness.report(false);
+      }
+
+      await harness.recover();
+      expect(await harness.fetch(true)).toBe(tokens[0]);
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('a remount over a client that already reported auth gets no optimism', async () => {
+      const token = makeJwt(3600);
+      const convex = makeConvexClient();
+      const first = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+      });
+      await flush();
+      expect(await first.fetch(false)).toBe(token);
+      await first.report(true);
+      first.unmount();
+
+      const second = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+
+      expect(second.result.current.auth.isAuthenticated).toBe(false);
+      expect(second.result.current.auth.isLoading).toBe(true);
+    });
 
     test("refusals hidden behind the SDK's transparent retry are all remembered", async () => {
       const tokenA = makeJwt(3600);
