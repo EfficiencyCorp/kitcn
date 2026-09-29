@@ -1314,6 +1314,19 @@ describe('ConvexAuthProvider', () => {
   });
 
   describe('onTokenIdentityChange', () => {
+    /** Runs a token fetch inside act, so the store updates it causes flush. */
+    const fetchInAct = async (
+      fetchToken: (args: {
+        forceRefreshToken: boolean;
+      }) => Promise<string | null>,
+      forceRefreshToken: boolean
+    ) => {
+      let token: string | null = null;
+      await act(async () => {
+        token = await fetchToken({ forceRefreshToken });
+      });
+      return token;
+    };
     const identityJwt = (sub: string, sessionId: string, expSeconds = 3600) => {
       const payload = btoa(
         JSON.stringify({
@@ -1367,7 +1380,7 @@ describe('ConvexAuthProvider', () => {
         onTokenIdentityChange,
         fetch: (forceRefreshToken: boolean) => {
           if (!fetchToken) throw new Error('setAuth was not called');
-          return fetchToken({ forceRefreshToken });
+          return fetchInAct(fetchToken, forceRefreshToken);
         },
       };
     };
@@ -1416,12 +1429,12 @@ describe('ConvexAuthProvider', () => {
       await flush();
       if (!fetchToken) throw new Error('setAuth was not called');
 
-      expect(await fetchToken({ forceRefreshToken: false })).toBeNull();
+      expect(await fetchInAct(fetchToken, false)).toBeNull();
       expect(onTokenIdentityChange).toHaveBeenCalledTimes(1);
       expect(close).toHaveBeenCalledTimes(1);
       // B never reached the cache, and nothing is handed out any more.
       expect(result.current.get('token')).not.toBe(tokenForB);
-      expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
+      expect(await fetchInAct(fetchToken, true)).toBeNull();
     });
 
     test('no SSR token: the first token a sign-in obtains sets the identity', async () => {
@@ -1461,7 +1474,7 @@ describe('ConvexAuthProvider', () => {
       await flush();
       if (!fetchToken) throw new Error('setAuth was not called');
 
-      expect(await fetchToken({ forceRefreshToken: false })).toBe(tokenForC);
+      expect(await fetchInAct(fetchToken, false)).toBe(tokenForC);
       expect(onTokenIdentityChange).toHaveBeenCalledTimes(0);
       expect(close).toHaveBeenCalledTimes(0);
     });
@@ -1539,7 +1552,7 @@ describe('ConvexAuthProvider', () => {
           onTokenIdentityChange,
           fetch: (forceRefreshToken: boolean) => {
             if (!fetchToken) throw new Error('setAuth was not called');
-            return fetchToken({ forceRefreshToken });
+            return fetchInAct(fetchToken, forceRefreshToken);
           },
         };
       };
@@ -1661,7 +1674,7 @@ describe('ConvexAuthProvider', () => {
           setAuth,
           fetch: (forceRefreshToken: boolean) => {
             if (!fetchToken) throw new Error('setAuth was not called');
-            return fetchToken({ forceRefreshToken });
+            return fetchInAct(fetchToken, forceRefreshToken);
           },
           replaceOnAdmitted: (next: (token: string) => void) => {
             onAdmitted = next;

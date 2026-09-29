@@ -175,12 +175,14 @@ describe('ConvexQueryClient (server mode)', () => {
       const ConvexQueryClient = await getServerConvexQueryClient('random');
       const convex = startConvexClient();
       const random = spyOn(Math, 'random');
+      try {
+        const client = new ConvexQueryClient(convex as any);
+        await client.queryFn()(context('a:one'));
 
-      const client = new ConvexQueryClient(convex as any);
-      await client.queryFn()(context('a:one'));
-
-      expect(random).toHaveBeenCalledTimes(0);
-      random.mockRestore();
+        expect(random).toHaveBeenCalledTimes(0);
+      } finally {
+        random.mockRestore();
+      }
     });
 
     test('interleaved Start requests keep their own auth and snapshot', async () => {
