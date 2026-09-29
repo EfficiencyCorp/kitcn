@@ -2603,7 +2603,7 @@ describe('ConvexAuthProvider', () => {
       await flush();
       const second = convexHarness({
         convex,
-        extraHook: () => useFetchAccessToken(),
+        extraHook: useFetchAccessToken,
         initialToken: tokenForA,
       });
       await flush();
