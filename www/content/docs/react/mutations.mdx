@@ -120,6 +120,26 @@ deleteSession.mutate(
 );
 ```
 
+### Optimistic Updates
+
+Pass `optimisticUpdate` to use Convex's native optimistic updates. It edits Convex's local query store, which cRPC queries read, and Convex rolls it back when the mutation fails:
+
+```tsx showLineNumbers {1,5-9}
+import { api } from '@convex/api';
+
+const renameTodo = useMutation(
+  crpc.todos.rename.mutationOptions({
+    optimisticUpdate: (localStore, args) => {
+      const todo = localStore.getQuery(api.todos.get, { id: args.id });
+      if (!todo) return;
+      localStore.setQuery(api.todos.get, { id: args.id }, { ...todo, title: args.title });
+    },
+  })
+);
+```
+
+Args and query values are in their wire shape (before any transformer decodes them).
+
 ## Actions as Mutations
 
 Convex actions can be used as mutations for external API calls:
@@ -171,3 +191,9 @@ All standard [TanStack Query mutation options](https://tanstack.com/query/latest
 | `onMutate` | `(variables) => context` | Called before mutation (for optimistic updates) |
 | `onSettled` | `(data, error, variables, context) => void` | Called on completion |
 | `retry` | `number \| boolean` | Retry failed mutations |
+
+kitcn adds one Convex option:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `optimisticUpdate` | `(localStore, args) => void` | Convex optimistic update on the local query store, rolled back by Convex on failure ([Optimistic Updates](#optimistic-updates)) |

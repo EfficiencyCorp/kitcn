@@ -408,8 +408,16 @@ All from `kitcn/react`:
   initialToken={token}           // from SSR (caller.getToken())
   onMutationUnauthorized={() => router.push('/login')}
   onQueryUnauthorized={({ queryName }) => console.log(`Unauth: ${queryName}`)}
+  optimisticAuth                  // opt-in: run auth queries on a held unexpired JWT before Convex confirms it
+  onTokenIdentityChange={() => window.location.reload()} // opt-in identity guard
 >
 ```
+
+Delta from parity:
+- `optimisticAuth` (default `false`): auth-bound queries run before Convex confirms the token. Convex authenticates first on the same socket and evaluates none of them if the token is refused; a refused token resets auth-bound queries and never reopens the gate. Opaque/expired tokens never open it.
+- `onTokenIdentityChange`: the document keeps one identity (JWT `sub` + `sessionId`), from `initialToken` or the first token obtained. A token for another user/session is refused before it is cached (Convex and cRPC HTTP never use it), the Convex client is closed (queued mutations and optimistic updates dropped), later token requests return `null`, and the callback runs. Same-session refreshes pass.
+- `tokenIdentityBaseline` (`string | null | () => string | null`, needs `onTokenIdentityChange`): identity (`sub|sessionId`) the document already speaks for, for a provider mounted more than once per document (per route group). A getter is read at every token hand-out, cached tokens included (covers providers kept hidden by React `<Activity>`).
+- `onTokenIdentityAdmitted(token)` (needs `onTokenIdentityChange`): called with every token the guard hands out, never a refused one.
 
 For `@convex-dev/auth` (React Native):
 ```tsx

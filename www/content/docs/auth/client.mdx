@@ -485,6 +485,37 @@ function App() {
 | `initialToken` | `string?` | Initial session token (from SSR) |
 | `onMutationUnauthorized` | `() => void` | Called when mutation is blocked |
 | `onQueryUnauthorized` | `({ queryName }) => void` | Called when query is blocked |
+| `optimisticAuth` | `boolean?` | Run auth-bound queries as soon as an unexpired JWT is held, before Convex confirms it. Default `false` |
+| `onTokenIdentityChange` | `() => void` | Enables the token identity guard; called once when a token for another user or session is refused |
+| `tokenIdentityBaseline` | `string \| null \| (() => string \| null)` | Identity (`sub\|sessionId`) the document already speaks for; a getter is read at every token hand-out. Needs `onTokenIdentityChange` |
+| `onTokenIdentityAdmitted` | `(token: string) => void` | Called with every token the guard hands out, never a refused one. Needs `onTokenIdentityChange` |
+
+### Optimistic Auth
+
+By default, auth-bound queries wait until Convex confirms the token. With `optimisticAuth`, they run as soon as an unexpired JWT is held (for example the SSR `initialToken`), saving one socket round trip on a hard load. Convex authenticates the socket before any query sent behind the token, and evaluates none of them if it refuses the token. A refused token sets `isAuthenticated` back to `false`, which clears auth-bound queries, and that token never opens the gate again. Opaque and expired tokens never open it.
+
+```tsx showLineNumbers {4}
+<ConvexAuthProvider
+  client={convexClient}
+  authClient={authClient}
+  optimisticAuth
+  initialToken={serverToken}
+>
+```
+
+### Token Identity Guard
+
+With `onTokenIdentityChange`, a document speaks for one identity (JWT `sub` and `sessionId`): the one it holds when it mounts (`initialToken`), or, with none, the first token it obtains. A token for another user or session (a sign-in in another tab) is refused before it is cached, so neither Convex nor cRPC HTTP requests use it. The Convex client is closed, which drops its queued mutations and their optimistic updates, every later token request answers `null`, and the callback runs. Same-session refreshes pass through.
+
+```tsx showLineNumbers {4}
+<ConvexAuthProvider
+  client={convexClient}
+  authClient={authClient}
+  onTokenIdentityChange={() => window.location.reload()}
+>
+```
+
+An app that mounts the provider more than once in one document (for example one per route group over a shared Convex client) passes the identity the document already speaks for as `tokenIdentityBaseline`, so a remount without a token still refuses another identity. As a getter, it is read at every token hand-out, cached tokens included, so a provider kept mounted but hidden (React `<Activity>`) refuses a token once the document has moved to another identity. `onTokenIdentityAdmitted` receives each admitted token as it is handed out, so the document can record the identity at that moment.
 
 ## Auth Flow
 

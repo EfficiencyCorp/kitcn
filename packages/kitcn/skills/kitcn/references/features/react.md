@@ -298,6 +298,17 @@ const mutation = useMutation(crpc.user.update.mutationOptions({
 
 Signature: `crpc.path.mutationOptions(options?)` — standard TanStack mutation options except `mutationFn`.
 
+Delta from parity: `optimisticUpdate` is a Convex optimistic update, passed to Convex's `withOptimisticUpdate` (not a TanStack option). It edits Convex's local query store, which cRPC queries read, and Convex rolls it back on failure; prefer it over `onMutate` + `setQueryData` for Convex data. Args and values are in wire shape.
+
+```ts
+const rename = useMutation(crpc.todos.rename.mutationOptions({
+  optimisticUpdate: (localStore, args) => {
+    const todo = localStore.getQuery(api.todos.get, { id: args.id });
+    if (todo) localStore.setQuery(api.todos.get, { id: args.id }, { ...todo, title: args.title });
+  },
+}));
+```
+
 ### Mutation Keys
 
 ```ts
