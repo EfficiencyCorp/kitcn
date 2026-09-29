@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { ConvexHttpClient } from 'convex/browser';
 import { makeFunctionReference } from 'convex/server';
 
 describe('auth/start token refresh', () => {
@@ -19,19 +20,27 @@ describe('auth/start token refresh', () => {
       return 'ok';
     });
 
-    mock.module('convex/browser', () => ({
-      ConvexHttpClient: class {
-        token?: string;
-        constructor(_url: string) {}
-        query = query;
-        mutation = query;
-        action = query;
-        setAuth(token: string) {
-          this.token = token;
-        }
-        setFetchOptions(_options: RequestInit) {}
-      },
-    }));
+    // Spy on the real client: mock.module('convex/browser') is process-global
+    // and would leak a stub ConvexHttpClient into later test files.
+    const proto = ConvexHttpClient.prototype as unknown as Record<
+      'action' | 'mutation' | 'query' | 'setAuth' | 'setFetchOptions',
+      (...args: any[]) => any
+    >;
+    spyOn(proto, 'setAuth').mockImplementation(function (
+      this: { token?: string },
+      token: string
+    ) {
+      this.token = token;
+    });
+    spyOn(proto, 'setFetchOptions').mockImplementation(() => {});
+    for (const method of ['query', 'mutation', 'action'] as const) {
+      spyOn(proto, method).mockImplementation(function (
+        this: { token?: string },
+        ref: unknown
+      ) {
+        return query.call(this, ref);
+      });
+    }
 
     const getToken = mock(async (_siteUrl: string, _headers: Headers) => {
       if (getToken.mock.calls.length === 1) {
