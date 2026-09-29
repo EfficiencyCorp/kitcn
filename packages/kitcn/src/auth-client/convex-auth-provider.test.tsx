@@ -1972,7 +1972,10 @@ describe('ConvexAuthProvider', () => {
     }: {
       authClientExtras?: Record<string, unknown>;
       baseline?: string | null | (() => string | null);
-      convex?: ReturnType<typeof makeConvexClient>;
+      convex?: Pick<
+        ReturnType<typeof makeConvexClient>,
+        'bindings' | 'client' | 'close'
+      >;
       extraHook?: () => unknown;
       guard?: boolean;
       initialToken?: string;
@@ -2349,6 +2352,108 @@ describe('ConvexAuthProvider', () => {
         [tokenForB],
       ]);
       expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+    });
+
+    /**
+     * A client whose auth runs through Convex's own AuthenticationManager, so
+     * the SDK's transparent retry (refetch and re-authenticate after an auth
+     * error) happens between the provider's token hand-outs and the single
+     * refusal React finally sees. `refuse` is the server rejecting the token
+     * it was last sent.
+     */
+    const makeManagedConvexClient = async () => {
+      const entry = import.meta.resolve('convex/browser');
+      const { AuthenticationManager } = await import(
+        new URL('./sync/authentication_manager.js', entry).href
+      );
+      let authVersion = 0;
+      let auth: string | null = null;
+      const clear = () => {
+        auth = null;
+        authVersion += 1;
+      };
+      const syncState = {
+        clearAuth: clear,
+        getAuth: () => (auth ? { tokenType: 'User', value: auth } : undefined),
+        hasAuth: () => auth !== null,
+        isCurrentOrNewerAuthVersion: (version: number) =>
+          version >= authVersion,
+        isNewAuth: (value: string) => auth !== value,
+        markAuthCompletion: () => {},
+      };
+      const quiet = () => {};
+      const manager = new AuthenticationManager(
+        syncState,
+        {
+          authenticate: (token: string) => {
+            auth = token;
+            authVersion += 1;
+          },
+          clearAuth: clear,
+          pauseSocket: quiet,
+          resumeSocket: quiet,
+          stopSocket: async () => {},
+          tryRestartSocket: quiet,
+        },
+        {
+          initialAuthTokenReuse: false,
+          logger: { error: quiet, log: quiet, logVerbose: quiet, warn: quiet },
+          refreshTokenLeewaySeconds: 10,
+        }
+      );
+      const bindings: Binding[] = [];
+      const close = mock(async () => {});
+      const client = {
+        setAuth: (
+          fetchToken: Binding['fetchToken'],
+          onChange: Binding['onChange']
+        ) => {
+          bindings.push({ fetchToken, onChange });
+          void manager.setConfig(fetchToken, onChange);
+        },
+        clearAuth: () => manager.stop(),
+        close,
+      };
+      const refuse = () =>
+        act(async () => {
+          manager.onAuthError({
+            authUpdateAttempted: true,
+            baseVersion: authVersion - 1,
+            error: 'invalid token',
+            type: 'AuthError',
+          });
+          await new Promise((r) => setTimeout(r, 0));
+        });
+      return { bindings, client, close, refuse };
+    };
+
+    test("refusals hidden behind the SDK's transparent retry are all remembered", async () => {
+      const tokenA = makeJwt(3600);
+      // Under a minute left: the recovery fetch goes back to the endpoint.
+      const tokenB = makeJwt(30);
+      const convex = await makeManagedConvexClient();
+      const harness = convexHarness({
+        convex,
+        guard: false,
+        initialToken: tokenA,
+        optimisticAuth: true,
+        tokens: [tokenB, null, tokenA],
+      });
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(true);
+
+      // The server refuses A; the SDK refetches B on its own and sends it;
+      // the server refuses B; only then does React hear one refusal.
+      await convex.refuse();
+      await convex.refuse();
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+
+      // Recovery obtains A again: a token Convex refused never reopens the gate.
+      await harness.recover();
+      await flush();
+      expect(harness.result.current.store.get('token')).toBe(tokenA);
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
     });
 
     test('a token Convex refused never reopens the optimistic gate, even after another refusal', async () => {

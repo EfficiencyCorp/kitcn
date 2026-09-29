@@ -33,6 +33,7 @@ import {
   markAuthStoreTripped,
   markIdentityGuardTripped,
 } from '../react/identity-guard-trip';
+import { TokenRefusals } from './token-refusals';
 import type { ConvexAuthProviderClient } from './types';
 
 type AuthClientFetch = ConvexAuthProviderClient & {
@@ -544,8 +545,10 @@ function ConvexAuthProviderInner({
   const [guardTripped, setGuardTripped] = useState(
     refusedInitialToken || inheritedTrip
   );
-  // The token Convex received last, so a refusal is bound to what it refused.
-  const submittedTokenRef = useRef<string | null>(null);
+  // Tokens handed to Convex and those it refused, for the optimistic gate.
+  const refusalsRef = useRef<TokenRefusals | null>(null);
+  refusalsRef.current ??= new TokenRefusals();
+  const refusals = refusalsRef.current;
   // A fresh token announced when it was admitted, so its hand-out does not
   // announce it a second time.
   const announcedTokenRef = useRef<string | null>(null);
@@ -608,7 +611,6 @@ function ConvexAuthProviderInner({
     const guard = identityGuardRef.current!;
     return !guard.tripped && judgeTokenIdentity(guard, token) !== null;
   }, []);
-  const getSubmittedToken = useCallback(() => submittedTokenRef.current, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -889,14 +891,15 @@ function ConvexAuthProviderInner({
     [fetchAccessToken, admitToken]
   );
 
-  // What Convex receives: recorded so a refusal is bound to that token.
+  // What Convex receives: recorded, so a refusal covers every token Convex
+  // tried since its last confirmation.
   const convexFetchAccessToken = useCallback(
     async (args: { forceRefreshToken?: boolean } = {}) => {
       const token = await guardedFetchAccessToken(args);
-      submittedTokenRef.current = token;
+      if (token) refusals.submitted(token);
       return token;
     },
-    [guardedFetchAccessToken]
+    [guardedFetchAccessToken, refusals]
   );
 
   // Create useAuth hook for ConvexProviderWithAuth
@@ -925,9 +928,9 @@ function ConvexAuthProviderInner({
       >
         <AuthStateSync
           canOpenGate={canOpenGate}
-          getSubmittedToken={getSubmittedToken}
           guardTripped={guardTripped}
           optimisticAuth={optimisticAuth}
+          refusals={refusals}
         >
           {children}
         </AuthStateSync>
@@ -951,31 +954,29 @@ function ConvexAuthProviderInner({
 function AuthStateSync({
   canOpenGate,
   children,
-  getSubmittedToken,
   guardTripped,
   optimisticAuth = false,
+  refusals,
 }: {
   canOpenGate: (token: string) => boolean;
   children: ReactNode;
-  getSubmittedToken: () => string | null;
   guardTripped: boolean;
   optimisticAuth?: boolean;
+  refusals: TokenRefusals;
 }) {
   const { isLoading: convexIsLoading, isAuthenticated } = useConvexAuth();
   const authStore = useAuthStore();
   const token = useAuthValue('token');
-  // Every token Convex refused: none of them opens the optimistic gate again.
-  const rejectedTokensRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    // A refusal covers the tokens Convex received, not whatever the store
+    // holds by now; none of them opens the optimistic gate again.
+    if (!convexIsLoading && isAuthenticated) refusals.confirmed();
     if (
       optimisticAuth &&
       isTokenRejectedByConvex({ convexIsLoading, isAuthenticated, token })
     ) {
-      // The refusal is about the token Convex received, not whatever the
-      // store holds by now.
-      const submitted = getSubmittedToken();
-      if (submitted) rejectedTokensRef.current.add(submitted);
+      refusals.refused();
     }
     const gate = resolveAuthGate({
       canOpenGate,
@@ -983,7 +984,7 @@ function AuthStateSync({
       guardTripped,
       isAuthenticated,
       optimisticAuth,
-      rejectedTokens: rejectedTokensRef.current,
+      refusals,
       token,
     });
 
@@ -992,10 +993,10 @@ function AuthStateSync({
   }, [
     canOpenGate,
     convexIsLoading,
-    getSubmittedToken,
     guardTripped,
     isAuthenticated,
     optimisticAuth,
+    refusals,
     token,
     authStore,
   ]);
@@ -1105,7 +1106,7 @@ type AuthGateInput = {
   guardTripped: boolean;
   isAuthenticated: boolean;
   optimisticAuth: boolean;
-  rejectedTokens: ReadonlySet<string>;
+  refusals: Pick<TokenRefusals, 'has'>;
   token: string | null;
 };
 
@@ -1138,7 +1139,7 @@ function resolveAuthGate({
   guardTripped,
   isAuthenticated,
   optimisticAuth,
-  rejectedTokens,
+  refusals,
   token,
 }: AuthGateInput): { isAuthenticated: boolean; isLoading: boolean } {
   // A tripped identity guard is terminal: unauthenticated, whatever Convex says.
@@ -1149,7 +1150,8 @@ function resolveAuthGate({
     optimisticAuth &&
     convexIsLoading &&
     token !== null &&
-    isOptimisticToken(token, rejectedTokens) &&
+    !refusals.has(token) &&
+    isOptimisticToken(token) &&
     canOpenGate(token)
   ) {
     return { isAuthenticated: true, isLoading: false };
@@ -1162,8 +1164,7 @@ function resolveAuthGate({
   };
 }
 
-function isOptimisticToken(token: string, rejectedTokens: ReadonlySet<string>) {
-  if (rejectedTokens.has(token)) return false;
+function isOptimisticToken(token: string) {
   const expiresAt = decodeJwtExp(token);
   return expiresAt !== null && expiresAt > Date.now();
 }
