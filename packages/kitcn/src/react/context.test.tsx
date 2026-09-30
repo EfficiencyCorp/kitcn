@@ -9,6 +9,7 @@ import {
   useMeta,
 } from './context';
 import * as httpProxyModule from './http-proxy';
+import { resetDocumentTripForTests, tripDocument } from './identity-guard-trip';
 import * as proxyModule from './proxy';
 import * as vanillaClientModule from './vanilla-client';
 
@@ -219,6 +220,49 @@ describe('createCRPCContext', () => {
       expect(await headers()).toEqual({});
       expect(fetchAccessToken).toHaveBeenCalledTimes(2);
     } finally {
+      createHttpProxySpy.mockRestore();
+    }
+  });
+
+  test('http headers carry no kitcn token when the document trips while app headers load', async () => {
+    const createHttpProxySpy = spyOn(
+      httpProxyModule,
+      'createHttpProxy'
+    ).mockReturnValue({} as any);
+    const fetchAccessToken = mock(async () => 'token-a');
+    useFetchAccessTokenSpy.mockImplementation(() => fetchAccessToken as any);
+    let releaseHeaders!: (headers: Record<string, string>) => void;
+    const appHeaders = () =>
+      new Promise<Record<string, string>>((resolve) => {
+        releaseHeaders = resolve;
+      });
+    const api = {
+      _http: { 'todos.get': { method: 'GET', path: '/todos/:id' } },
+    } as any;
+
+    try {
+      const { CRPCProvider, useCRPC } = createCRPCContext({
+        api,
+        convexSiteUrl: 'https://example.convex.site',
+        headers: appHeaders,
+      });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <CRPCProvider convexClient={{} as any} convexQueryClient={{} as any}>
+          {children}
+        </CRPCProvider>
+      );
+      renderHook(() => useCRPC(), { wrapper });
+      const headers = createHttpProxySpy.mock.calls[0]?.[0]
+        ?.headers as () => Promise<Record<string, string>>;
+
+      const pending = headers();
+      await new Promise((r) => setTimeout(r, 0));
+      tripDocument();
+      releaseHeaders({ 'x-app': '1' });
+
+      expect(await pending).toEqual({ 'x-app': '1' });
+    } finally {
+      resetDocumentTripForTests();
       createHttpProxySpy.mockRestore();
     }
   });

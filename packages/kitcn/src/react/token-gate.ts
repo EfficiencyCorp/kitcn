@@ -63,9 +63,27 @@ export const publishToken = (
   return true;
 };
 
-/** Publishes `isAuthenticated: true` unless the document tripped. */
+/**
+ * Publishes `isAuthenticated: true` if, at this moment, the document has not
+ * tripped and the store's token is still admitted (a guard whose document
+ * moved to another identity refuses it and trips the document).
+ */
 export const publishAuthenticated = (authStore: AuthStore) => {
   if (isDocumentTripped()) return false;
+  const token = authStore.get('token');
+  if (token && !admitToken(authStore, token, { announce: false })) {
+    return false;
+  }
   authStore.set('isAuthenticated', true);
   return true;
+};
+
+/** Publishes the auth gate's state; never authenticated after a trip. */
+export const publishAuthState = (
+  authStore: AuthStore,
+  state: { isAuthenticated: boolean; isLoading: boolean }
+) => {
+  const tripped = isDocumentTripped();
+  authStore.set('isLoading', tripped ? false : state.isLoading);
+  authStore.set('isAuthenticated', tripped ? false : state.isAuthenticated);
 };

@@ -1,3 +1,5 @@
+import { admitsDocumentToken } from '../react/identity-guard-trip';
+
 export type MaybePromise<T> = Promise<T> | T;
 
 export type StartLoaderAuthClient = {
@@ -45,7 +47,13 @@ export const syncConvexAuthForStartLoader = async ({
   const serverHttpClient = isStartLoaderConvexQueryClient(convex)
     ? convex.serverHttpClient
     : undefined;
-  const token = (await getToken()) ?? null;
+  const loaderToken = (await getToken()) ?? null;
+  // In the browser, the token identity guard's document state applies here
+  // too: nothing after a trip, and only the identity the document admitted.
+  const token =
+    loaderToken !== null && !admitsDocumentToken(loaderToken)
+      ? null
+      : loaderToken;
   const previousToken = startLoaderAuthTokens.get(convex);
 
   if (previousToken === token) {
@@ -60,7 +68,8 @@ export const syncConvexAuthForStartLoader = async ({
     return { isAuthenticated: false, token };
   }
 
-  authClient.setAuth(async () => token);
+  // Checked again at every hand-out: a later trip applies at once.
+  authClient.setAuth(async () => (admitsDocumentToken(token) ? token : null));
   serverHttpClient?.setAuth(token);
   return { isAuthenticated: true, token };
 };

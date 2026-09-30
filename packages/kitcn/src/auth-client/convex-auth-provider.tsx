@@ -36,12 +36,15 @@ import {
   useAuthValue,
 } from '../react/auth-store';
 import {
+  decodeTokenIdentity,
   isDocumentTripped,
+  recordDocumentIdentity,
   subscribeDocumentTrip,
   tripDocument,
 } from '../react/identity-guard-trip';
 import {
   admitToken,
+  publishAuthState,
   publishToken,
   registerTokenAdmission,
   type TokenAdmission,
@@ -641,6 +644,7 @@ function ConvexAuthProviderInner({
       const guard = identityGuardRef.current!;
       if (guard.tripped) return false;
       if (admitTokenIdentity(guard, token)) {
+        if (guard.identity) recordDocumentIdentity(guard.identity);
         if (announce) onTokenIdentityAdmittedRef.current?.(token);
         return true;
       }
@@ -1026,19 +1030,21 @@ function AuthStateSync({
   const settled = useSyncExternalStore(subscribe, getSettled, getSettled);
 
   useEffect(() => {
+    // Read the trip and the settlement again at the write: a descendant
+    // effect earlier in this commit may have changed either.
     const gate = resolveAuthGate({
       canOpenGate,
       convexIsLoading,
-      guardTripped,
+      guardTripped: guardTripped || isDocumentTripped(),
       isAuthenticated,
-      optimisticWindow: optimisticAuth && !settled,
+      optimisticWindow: optimisticAuth && !settled && !isClientSettled(client),
       token,
     });
 
-    authStore.set('isLoading', gate.isLoading);
-    authStore.set('isAuthenticated', gate.isAuthenticated);
+    publishAuthState(authStore, gate);
   }, [
     canOpenGate,
+    client,
     convexIsLoading,
     guardTripped,
     isAuthenticated,
@@ -1049,29 +1055,6 @@ function AuthStateSync({
   ]);
 
   return children;
-}
-
-/**
- * The user and session a Better Auth Convex JWT speaks for (`sub` and
- * `sessionId`), or null. Other claims (name, email, updatedAt) may change
- * within one session and do not count.
- */
-function decodeTokenIdentity(token: string | null): string | null {
-  if (!token) return null;
-  try {
-    const segment = token.split('.')[1];
-    if (!segment) return null;
-    const payload: unknown = JSON.parse(
-      atob(segment.replaceAll('-', '+').replaceAll('_', '/'))
-    );
-    if (typeof payload !== 'object' || payload === null) return null;
-    const sub = 'sub' in payload ? payload.sub : null;
-    const sessionId = 'sessionId' in payload ? payload.sessionId : null;
-    if (typeof sub !== 'string') return null;
-    return `${sub}|${typeof sessionId === 'string' ? sessionId : ''}`;
-  } catch {
-    return null;
-  }
 }
 
 type IdentityGuard = {

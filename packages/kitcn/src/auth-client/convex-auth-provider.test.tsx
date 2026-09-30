@@ -1,5 +1,6 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
+import { syncConvexAuthForStartLoader } from '../auth-start';
 import { AuthMutationError } from '../crpc/auth-error';
 import { createAuthMutations } from '../react/auth-mutations';
 import { writeAuthSessionFallbackToken } from '../react/auth-session-fallback';
@@ -8,6 +9,7 @@ import {
   decodeJwtExp,
   useAuth,
   useAuthStore,
+  useAuthValue,
   useConvexAuthRecovery,
   useFetchAccessToken,
 } from '../react/auth-store';
@@ -2662,6 +2664,155 @@ describe('ConvexAuthProvider', () => {
       mount(optimistic, true);
       await flush();
       expect(optimistic.setAuth).toBe(wrapped);
+    });
+
+    test('the Start loader hands no token to a fresh client after a trip', async () => {
+      const tokenForB = identityJwt('user_b', 'session_b');
+      const harness = convexHarness({
+        initialToken: identityJwt('user_a', 'session_a'),
+        tokens: [tokenForB],
+      });
+      await flush();
+      await harness.fetch(false);
+      expect(await harness.fetch(true)).toBeNull();
+
+      const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+      const state = await syncConvexAuthForStartLoader({
+        convex: fresh,
+        getToken: async () => tokenForB,
+      });
+
+      expect(state).toEqual({ isAuthenticated: false, token: null });
+      expect(fresh.setAuth).toHaveBeenCalledTimes(0);
+    });
+
+    test('the Start loader refuses a token of another identity than the document admitted', async () => {
+      const harness = convexHarness({
+        initialToken: identityJwt('user_a', 'session_a'),
+      });
+      await flush();
+      expect(await harness.fetch(false)).not.toBeNull();
+
+      const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+      const state = await syncConvexAuthForStartLoader({
+        convex: fresh,
+        getToken: async () => identityJwt('user_b', 'session_b'),
+      });
+
+      expect(state).toEqual({ isAuthenticated: false, token: null });
+      expect(fresh.setAuth).toHaveBeenCalledTimes(0);
+    });
+
+    test('a trip in a descendant effect is not overwritten by a stale optimistic publication', async () => {
+      const published: boolean[] = [];
+      const useTripOnMount = () => {
+        const store = useAuthStore();
+        useEffect(() => {
+          const unsubscribe = store.subscribe(
+            'isAuthenticated',
+            (value: boolean) => published.push(value)
+          );
+          tripDocument();
+          return unsubscribe;
+        }, [store]);
+      };
+      const harness = convexHarness({
+        extraHook: useTripOnMount,
+        guard: false,
+        initialToken: makeJwt(3600),
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+
+      expect(published).not.toContain(true);
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('a settlement in a descendant effect is not overwritten by a stale optimistic publication', async () => {
+      const first = makeJwt(3600);
+      const second = makeJwt(3500);
+      const convex = makeConvexClient();
+      const published: boolean[] = [];
+      const useSettleOnSecondToken = () => {
+        const store = useAuthStore();
+        const token = useAuthValue('token');
+        useEffect(() => {
+          if (token !== second) return;
+          const unsubscribe = store.subscribe(
+            'isAuthenticated',
+            (value: boolean) => published.push(value)
+          );
+          convex.bindings.at(-1)!.onChange(false);
+          // Published before AuthStateSync's effect in the same commit runs,
+          // so a stale optimistic publication would show up as `true`.
+          store.set('isAuthenticated', false);
+          return unsubscribe;
+        }, [store, token]);
+      };
+      const harness = convexHarness({
+        convex,
+        extraHook: useSettleOnSecondToken,
+        guard: false,
+        initialToken: first,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(harness.result.current.auth.isAuthenticated).toBe(true);
+
+      await act(async () => {
+        harness.result.current.store.set('token', second);
+      });
+      await flush();
+
+      expect(published).not.toContain(true);
+    });
+
+    test('a sign-in fails if the document moved identity before authenticated is published', async () => {
+      const document = { identity: 'user_a|session_a' };
+      const tokenForA = identityJwt('user_a', 'session_a', 7200);
+      const session = deferred<unknown>();
+      const authClientExtras = {
+        getSession: () => session.promise,
+        signIn: { email: async () => ({ data: { token: tokenForA } }) },
+      };
+      const mutations = createAuthMutations(authClientExtras as any);
+      const harness = convexHarness({
+        authClientExtras,
+        baseline: () => document.identity,
+        extraHook: () => mutations.useSignInMutationOptions(),
+      });
+      await flush();
+      const store = harness.result.current.store;
+      const published: unknown[] = [];
+      const unsubscribe = store.subscribe('isAuthenticated', (value: boolean) =>
+        published.push(value)
+      );
+      const options = harness.result.current.extra as {
+        mutationFn: (args: unknown) => Promise<unknown>;
+      };
+      let outcome!: Promise<unknown>;
+      act(() => {
+        outcome = options.mutationFn({}).then(
+          () => null,
+          (error: unknown) => error
+        );
+      });
+      let failure: unknown;
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+        document.identity = 'user_b|session_b';
+        session.resolve({ data: null });
+        failure = await outcome;
+      });
+      unsubscribe();
+
+      expect((failure as AuthMutationError)?.code).toBe(
+        'TOKEN_IDENTITY_CHANGED'
+      );
+      expect(published).not.toContain(true);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
     });
 
     test('a throwing onTokenIdentityChange still closes the client', async () => {
