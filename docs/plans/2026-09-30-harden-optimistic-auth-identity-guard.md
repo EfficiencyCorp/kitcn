@@ -34,7 +34,7 @@ Task source:
   that his head does not have.
 - likely files: `auth-client/convex-auth-provider.tsx`,
   `auth-client/client-settlement.ts`, `react/token-gate.ts`,
-  `react/identity-guard-trip.ts`, `react/auth-mutations.ts`,
+  `react/identity-guard-registry.ts`, `react/auth-mutations.ts`,
   `react/context.tsx`, `auth-start/index.ts`, their tests; auth docs and the
   kitcn skill mirror.
 - browser surface: none rendered.
@@ -491,6 +491,45 @@ Review fixes:
   - H8 fixed (the round H1 plan commit): changeset folded (see Decisions).
   - H9 fixed (body): getter reads happen at admission, including the
     initial SSR admission.
+- Round H2 (Codex lanes: adversarial and spec on 3cb36826). The remaining
+  P1s shared one cause: admission was split between per-provider
+  constraints and the page registry, and paths checked different subsets.
+  Red logs kept outside the repo (`kitcn-1596-bodies/j-red.log`: 7 fail;
+  `j-built-red.log`: 2 fail against the round H1 build).
+  - J1 fixed (7d3a9d6d), structural: one `admitToken` in
+    `react/identity-guard-registry.ts`, called by every path (SSR hydration,
+    fetcher fresh and cached and the final hand-out, restore, hydration
+    fallback, sign-in tokens and publication, `AuthStateSync`, HTTP
+    headers, the Start loader); callers keep no admission logic. Order: page
+    trip; opaque-token policy; identity against the page identity, the
+    provider's own baseline and admitted identity, and every mounted
+    getter's current answer (identity-less JWTs refused once any is bound);
+    `onTokenIdentityAdmitted`; the trip again. A refused JWT trips the page.
+    Mounted providers live in the registry (added in a layout effect,
+    removed at unmount); each commit reconciles every held token against the
+    page. `identity-guard-trip.ts` is folded into the registry module.
+    Tests: `a later SSR token must match both its baseline and the page
+    identity`; `providers mounted together with SSR tokens of two
+    identities trip the page`; `a trip inside onTokenIdentityAdmitted at a
+    cached hand-out hands out nothing`; `a sibling without a getter is
+    bound by another guard's current getter`; built: `a sibling in
+    kitcn/auth/client is bound by another guard's current getter`, `an SSR
+    token in kitcn/auth/client is reconciled against the page identity`.
+    One existing test changed contract: a foreign token seeded into the
+    store now trips the page at the optimistic gate instead of only keeping
+    it closed (`a token seeded into the store opens the optimistic gate
+    only if the guard admits it`).
+  - J2 fixed (7d3a9d6d), behavioural: `pageRegistry()` returns null on the
+    server and never creates the registry; trip, identity, settlement and
+    getters are all read through it. Tests `a server-only loader creates,
+    reads and writes no page state`; `page state left by a torn-down DOM
+    does not reach a server call`.
+  - J3 fixed (7d3a9d6d), behavioural: the cached-token path classifies with
+    `isJwt`, so a two-segment opaque credential goes to the exchange as the
+    bearer, never to Convex. Test `a cached two-segment opaque credential
+    goes to the exchange, never to Convex`.
+  - Net non-test `src` delta: +386 / -441 (net -55); the provider lost 129
+    lines.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
@@ -501,7 +540,24 @@ Verification evidence:
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
   outside the repo.
-- Current (Bun 1.3.9, HEAD fc43523e plus changeset and this plan):
+- Current (Bun 1.3.9, HEAD 7d3a9d6d plus this plan):
+  - `bun run build` (packages/kitcn): exit 0.
+  - Focused (provider 104, context 11, auth-mutations 11, use-query-options
+    24, client 14, auth-start retry 1): 165 pass, 0 fail, 0 `act` warnings.
+  - Built-entrypoint integration (`identity-guard.entrypoints` 5,
+    `package-entrypoints` 1): 6 pass, 0 fail.
+  - `bun lint:fix`: exit 0, 979 files, no fixes applied, source unchanged;
+    `bun lint` exit 0.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint, typecheck, `test:bun` 1537 pass / 0 fail (155
+    files), `test:vitest` 1053 pass / 14 skipped, no type errors,
+    `test:cli` 124 pass / 0 fail, Concave smoke.
+  - `test:verify`: exit 0.
+  - `intent:validate` all passed, `intent:stale` up to date; `client.mdx`
+    compiles.
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Round H1 snapshot (Bun 1.3.9, HEAD fc43523e plus changeset and this plan):
   - `bun --cwd packages/kitcn build`: exit 0; typecheck exit 0.
   - Focused (provider 97, context 11, auth-mutations 11, use-query-options
     24, client 14, auth-start retry 1): 158 pass, 0 fail, 0 `act` warnings.
@@ -556,12 +612,12 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: 38 tests fail at #473's head; browser N/A
-  - Verified: focused 158 pass, built-entrypoint 4 pass, `test:bun` 1528/0; browser N/A
+  - Verified: focused 165 pass, built-entrypoint 6 pass, `test:bun` 1537/0; browser N/A
 - Browser check: N/A.
 - Outcome: the identity guard and optimistic gate hold their documented guarantees.
 - Caveat: fixture drift; `test:runtime` not run locally; autoreview blocked.
 - Design:
-  - Chosen boundary: one token gate; page-level trip and identity; client window.
+  - Chosen boundary: one admission function in the registry; page-level trip and identity; client window.
   - Why not quick patch: each bypass was a separate write path.
   - Why not broader change: no API change needed.
 - Verified: see Verification evidence.
@@ -599,6 +655,8 @@ Timeline:
 - 2026-09-30 Branch from #473's head fcbd2f84; hardening ported from
   `wip/473-hardening-rounds` and reconciled with ea5e442d; probe at fcbd2f84
   (38 fail); gates run; plan closed as blocked on the pre-existing gate.
+- 2026-09-30 Round H1 (309f876b, 6346b55d, fc43523e, 3cb36826).
+- 2026-09-30 Round H2: one admission in the registry (7d3a9d6d).
 
 Reboot status:
 | Question | Answer |
