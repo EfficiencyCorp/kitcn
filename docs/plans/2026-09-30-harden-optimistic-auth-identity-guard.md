@@ -182,7 +182,7 @@ Start Gates:
 | Public surface or package boundary identified | yes | No new public export; new internal modules; `AuthMutationError` code `TOKEN_IDENTITY_CHANGED` |
 | Convex entry/import graph impact identified | yes | Client and loader entries only; the loader imports only dependency-free `identity-guard-trip.ts` and `client-settlement.ts` |
 | CLI/scaffold/generated impact identified | no | N/A: none |
-| Release artifact path selected | yes | `.changeset/optimistic-auth-hardening.md` (patch) |
+| Release artifact path selected | yes | Entry appended to #473's unreleased `.changeset/optimistic-auth-gate.md` (patch) |
 | `changeset` skill loaded when `.changeset` is required | yes | Loaded; see Decisions for why a new file |
 | Package build / fixture impact decision recorded | yes | Build run; no scaffold change |
 | Docs pack selected | yes | `www/content/docs/auth/client.mdx` changed |
@@ -437,11 +437,10 @@ Decisions and tradeoffs:
   SSR check reads the getter only when there is a held token to admit. His
   naming (`decodeTokenSubjectSessionIdentity`,
   `resolveTokenIdentityBaseline`, `currentDocumentIdentity`) adopted.
-- Changeset: the `changeset` skill says to update an existing unreleased
-  draft, and #473's `.changeset/optimistic-auth-gate.md` is one on this
-  base. This PR ships after #473 merges, when its auto-release has consumed
-  that draft, so a separate patch changeset is added; if #473 has not
-  released when this PR opens, fold it into the draft per the skill.
+- Changeset: #473's `.changeset/optimistic-auth-gate.md` is unreleased on
+  this base, so per the `changeset` skill our three lines are appended to it
+  (his text unchanged) and no separate file is added. If #473 releases
+  before this PR opens, move the three lines into a new patch changeset.
 
 Implementation notes:
 - Ported from `wip/473-hardening-rounds` (cea25963): `react/token-gate.ts`,
@@ -451,8 +450,47 @@ Implementation notes:
   file as the `identity guard admission` block).
 
 Review fixes:
-- None yet; the review rounds that produced this code are recorded on
+- Earlier review rounds that produced the ported code are recorded on
   `wip/473-hardening-rounds` in `docs/plans/473-optimistic-auth-gate.md`.
+- Round H1 (Codex lanes: standards, spec, adversarial on 66da0e78). Red
+  logs kept outside the repo (`kitcn-1596-bodies/h1-red.log`, `h2-red.log`).
+  - H1 fixed (309f876b), behavioural at the artifact level: `auth/start` is
+    a separate tsdown build group from `auth/client` and `react`, so each
+    bundle had its own trip, page identity and settlement state. All of it
+    (plus admissions and the settlement wrapper marker) now lives in one
+    `globalThis` registry under `Symbol.for('kitcn.identityGuard.v1')`
+    (`react/identity-guard-registry.ts`); browser-only semantics unchanged.
+    New `identity-guard.entrypoints.integration.test.tsx` imports
+    `kitcn/auth/client`, `kitcn/auth/start` and `kitcn/react` from the
+    build: loader settlement seen by the provider; provider page identity
+    holds the loader; a provider trip stops the loader (3 red, then green).
+    No other new module-level state remains.
+  - H2 fixed (6346b55d), behavioural: the Start loader requires the
+    recorded page identity and every getter's current answer (read at
+    admission). Test `the Start loader holds a token to both the recorded
+    page identity and the current getter`.
+  - H3 fixed (6346b55d), behavioural: provider admission and the held SSR
+    check honour the recorded page identity. Test `a sibling provider
+    without a baseline cannot admit another identity after the page
+    admitted one`.
+  - H5 fixed (6346b55d), behavioural: the page identity is recorded in a
+    layout effect (commit), before passive effects hand Convex a fetcher;
+    it is never unrecorded. Test `an identity recorded in an abandoned
+    render does not quarantine the page`. The render-time settlement
+    wrapper install and admission registration stay, with a comment on why
+    a discarded render is harmless.
+  - H4 fixed (fc43523e), behavioural: auth-state publication reads the
+    store's token at the write. Test `auth-state publication reads the held
+    token at the write`.
+  - H6 fixed (fc43523e), behavioural: `publishToken` rechecks the trip after
+    admission (which runs `onTokenIdentityAdmitted`). Test `a trip inside
+    onTokenIdentityAdmitted leaves no token in the store`.
+  - H7 fixed (fc43523e), behavioural: only a structural JWT with a future
+    `exp` opens the optimistic gate. Test `a token that is not a JWT never
+    opens the optimistic gate, whatever its payload`.
+  - H8 fixed (the round H1 plan commit): changeset folded (see Decisions).
+  - H9 fixed (body): getter reads happen at admission, including the
+    initial SSR admission.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
@@ -463,7 +501,21 @@ Verification evidence:
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
   outside the repo.
-- Here (Bun 1.3.9, HEAD 7b8f3179 plus changeset and this plan):
+- Current (Bun 1.3.9, HEAD fc43523e plus changeset and this plan):
+  - `bun --cwd packages/kitcn build`: exit 0; typecheck exit 0.
+  - Focused (provider 97, context 11, auth-mutations 11, use-query-options
+    24, client 14, auth-start retry 1): 158 pass, 0 fail, 0 `act` warnings.
+  - Built-entrypoint integration (`identity-guard.entrypoints` 3,
+    `package-entrypoints` 1): 4 pass, 0 fail.
+  - `bun lint:fix`: exit 0, no fixes applied, source unchanged.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint (biome 980 files, eslint), typecheck 5/5,
+    `test:bun` 1528 pass / 0 fail (155 files), `test:vitest` 1053 pass / 14
+    skipped, no type errors, `test:cli` 124 pass / 0 fail, Concave smoke.
+  - `test:verify`: exit 0.
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Historical snapshot (Bun 1.3.9, HEAD 7b8f3179 plus changeset and this plan):
   - `bun --cwd packages/kitcn build`: exit 0; typecheck exit 0.
   - Focused (provider 91, context 11, auth-mutations 11, use-query-options
     24, client 14, auth-start retry 1): 152 pass, 0 fail, 0 `act` warnings.
@@ -504,7 +556,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: 38 tests fail at #473's head; browser N/A
-  - Verified: focused 152 pass, `test:bun` 1519/0; browser N/A
+  - Verified: focused 158 pass, built-entrypoint 4 pass, `test:bun` 1528/0; browser N/A
 - Browser check: N/A.
 - Outcome: the identity guard and optimistic gate hold their documented guarantees.
 - Caveat: fixture drift; `test:runtime` not run locally; autoreview blocked.
@@ -559,8 +611,8 @@ Reboot status:
 
 Open risks:
 - Autoreview has not run (TruffleHog missing locally).
-- Rebase onto `main` after #473 merges; the changeset may need folding (see
-  Decisions).
+- Rebase onto `main` after #473 merges; if #473 released first, move the
+  changeset lines into a new patch changeset (see Decisions).
 - One `optimisticAuth` setting per Convex client is a documented rule.
 
 Hard closeout guard:
