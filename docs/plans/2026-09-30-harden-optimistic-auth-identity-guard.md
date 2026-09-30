@@ -117,8 +117,9 @@ Current verdict:
 
 Implementation readiness:
 - verdict: ready
-- exact owner: token gate (`react/token-gate.ts`), page trip and identity
-  (`react/identity-guard-trip.ts`), client settlement
+- exact owner: one admission, page trip and identity
+  (`react/identity-guard-registry.ts`), store-level wrappers
+  (`react/token-gate.ts`), client settlement
   (`auth-client/client-settlement.ts`), provider admission and gate
 - contradiction status: reconciled with ea5e442d (see Decisions)
 - source-listed cases complete: yes
@@ -171,7 +172,7 @@ Start Gates:
 | `docs/solutions` checked for non-trivial existing-code work | yes | No entry covers these owners |
 | TDD decision before behavior change or bug fix | yes | Red at fcbd2f84 (probe), green here |
 | Branch decision for code-changing task | yes | `feat/optimistic-auth-hardening` from fcbd2f84 |
-| Release artifact decision | yes | New patch changeset (see Decisions) |
+| Release artifact decision | yes | Lines appended to #473's unreleased `.changeset/optimistic-auth-gate.md` (see Decisions) |
 | Browser tool decision for browser surface | no | N/A: no browser surface |
 | Commit / PR expectation decision | yes | For verified code-changing work, default is commit, push, and PR because `task` explicitly requires it; N/A only for explicit user decline, no local patch, analytical/blocked/inconclusive work, or recorded blocker. |
 | Task-style PR body decision | yes | Draft in the #459 task style |
@@ -180,10 +181,10 @@ Start Gates:
 | Output budget strategy recorded | yes | Logs to `/tmp`, summaries only |
 | Package/API pack selected | yes | Runtime behaviour of public props |
 | Public surface or package boundary identified | yes | No new public export; new internal modules; `AuthMutationError` code `TOKEN_IDENTITY_CHANGED` |
-| Convex entry/import graph impact identified | yes | Client and loader entries only; the loader imports only dependency-free `identity-guard-trip.ts` and `client-settlement.ts` |
+| Convex entry/import graph impact identified | yes | Client and loader entries only; the loader imports only dependency-free `identity-guard-registry.ts` and `client-settlement.ts` |
 | CLI/scaffold/generated impact identified | no | N/A: none |
 | Release artifact path selected | yes | Entry appended to #473's unreleased `.changeset/optimistic-auth-gate.md` (patch) |
-| `changeset` skill loaded when `.changeset` is required | yes | Loaded; see Decisions for why a new file |
+| `changeset` skill loaded when `.changeset` is required | yes | Loaded; see Decisions for why the existing draft is reused |
 | Package build / fixture impact decision recorded | yes | Build run; no scaffold change |
 | Docs pack selected | yes | `www/content/docs/auth/client.mdx` changed |
 | Docs guidance loaded | yes | Doc guidelines and `.agents/AGENTS.md` Docs rules |
@@ -306,7 +307,7 @@ Completion Gates:
 | Browser final proof | no | Attach screenshot or exact browser verification caveat when browser proof applies | N/A |
 | UI walkthrough | no | If UI or rendered output changed, run `.agents/skills/walkthrough/SKILL.md` after final proof and show annotated images in the final handoff; otherwise record N/A | N/A: no rendered output |
 | Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A: no scaffold change; `fixtures:check` drift is pre-existing (reproduces on `main`) |
-| Package behavior or public API changed | yes | Add a changeset or record why no changeset applies | Patch changeset added |
+| Package behavior or public API changed | yes | Add a changeset or record why no changeset applies | Appended to #473's unreleased patch changeset |
 | Docs and kitcn skill sync changed | yes | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | `client.mdx` and skill `auth.md` updated and synced |
 | Docs or content changed | yes | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | Claims checked against source and tests; MDX compiles |
 | High-risk mini gate | yes | For public API/runtime/package-boundary/browser/agent-action/command-contract changes, record realistic failure mode, proof plan, and why the chosen boundary is right; otherwise N/A | Failure mode: a legitimate token refused or a foreign one admitted; proof: the case matrix plus #473's tests; boundary: one gate every write goes through |
@@ -566,8 +567,46 @@ Review fixes:
     warning, guarded admissions fail closed). Test `an incompatible
     registry under the key fails guarded admissions closed`.
   - K7 fixed, wording: JSDoc, `client.mdx`, skill and mirror, body state
-    that an unguarded provider is bound by the page identity only when a
-    guarded provider shares the page.
+    the unguarded scope (narrowed in round H4, L6: a page that never
+    enables a guard is unchanged; an established page identity persists
+    until reload, even after the guard unmounts).
+
+- Round H4 (Codex lanes: adversarial and spec on 080f48b7), one commit
+  (7b9924d6). Red logs `kitcn-1596-bodies/l-red.log` (5 source tests fail)
+  and `l-built-red.log` (2 built cases fail against the round H3 build, the
+  7 earlier built cases pass there); then rebuilt and green.
+  - L1 fixed, behavioural: guardedness is read at every commit; a guard
+    enabled after mount is seeded from its fixed baseline or held token,
+    joins the page (`joinPage`) and reconciles held tokens. A fixed
+    baseline value stays first-render-only. Test `a guard enabled after
+    mount binds the identity the provider holds`.
+  - L2 fixed, behavioural: on a page with a mounted guarded provider, the
+    first identity any admission admits claims the page, the Start loader
+    included. Tests `on a guarded page, the Start loader's first admitted
+    JWT claims the page identity`; built `kitcn/auth/start's first JWT
+    claims the identity of a page kitcn/auth/client guards`.
+  - L3 fixed, behavioural: `publishAuthState` admits the current held
+    token and reads the trip again after the loading write, right before
+    an authenticated write. Tests `a token swapped by a loading subscriber
+    is admitted before authenticated is published`; `a trip in a loading
+    subscriber is seen before authenticated is published`; built `kitcn/
+    auth/client admits the held token again right before publishing
+    authenticated`.
+  - L4 fixed, behavioural: the Start loader reads the trip after `setAuth`
+    and refuses (clears both clients) if it tripped. Test `the Start loader
+    refuses when its setAuth trips the page`.
+  - L5 accepted and documented (registry key comment, JSDoc, `client.mdx`,
+    skill and mirror, body Caveat): two kitcn versions or revisions on one
+    page (dev HMR across revisions included) are unsupported; registries
+    under different keys, or next to an incompatible object under the key,
+    share no page identity until reload. The detecting entry keeps K6's
+    fail-closed behaviour. v3-adversarial findings 4 (v1 and v2 keys split
+    the identity) and 5 (per-copy stand-in) are accepted on this rationale.
+  - L6 fixed, wording: a page that never enables the guard is unchanged;
+    an established page identity persists until reload, binding every
+    provider and the loader, even after the guard unmounts.
+  - L7 fixed: the owner, import-graph and release-artifact rows name
+    `identity-guard-registry.ts` and the folded changeset.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
@@ -578,7 +617,22 @@ Verification evidence:
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
   outside the repo.
-- Current (Bun 1.3.9, HEAD eaefa418 plus this plan):
+- Current (Bun 1.3.9, HEAD 7b9924d6 plus this plan):
+  - `bun run build` (packages/kitcn): exit 0.
+  - Focused (provider 115, context 13, auth-mutations 11, use-query-options
+    24, client 14, auth-start retry 1): 178 pass, 0 fail, 0 `act` warnings.
+  - Built-entrypoint integration (`identity-guard.entrypoints` 9,
+    `package-entrypoints` 1): 10 pass, 0 fail.
+  - `bun lint:fix`: 979 files, no fixes applied; `bun lint` exit 0.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint, typecheck, `test:bun` 1554 pass / 0 fail (155
+    files), `test:vitest` 1053 pass / 14 skipped, no type errors,
+    `test:cli` 124 pass / 0 fail, Concave smoke.
+  - `test:verify`: exit 0.
+  - `client.mdx` compiles; skill mirror synced.
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Round H3 snapshot (Bun 1.3.9, HEAD eaefa418 plus this plan):
   - `bun run build` (packages/kitcn): exit 0.
   - Focused (provider 110, context 13, auth-mutations 11, use-query-options
     24, client 14, auth-start retry 1): 173 pass, 0 fail, 0 `act` warnings.
@@ -665,7 +719,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: 38 tests fail at #473's head; browser N/A
-  - Verified: focused 173 pass, built-entrypoint 8 pass, `test:bun` 1547/0; browser N/A
+  - Verified: focused 178 pass, built-entrypoint 10 pass, `test:bun` 1554/0; browser N/A
 - Browser check: N/A.
 - Outcome: the identity guard and optimistic gate hold their documented guarantees.
 - Caveat: fixture drift; `test:runtime` not run locally; autoreview blocked.
@@ -712,6 +766,9 @@ Timeline:
 - 2026-09-30 Round H2: one admission in the registry (7d3a9d6d).
 - 2026-09-30 Round H3: admission at send and before publication, fixed
   baselines, guarded-only opaque routing, registry key v2 (eaefa418).
+- 2026-09-30 Round H4: live guardedness, loader claims on guarded pages,
+  admission between publication writes, loader trip after setAuth
+  (7b9924d6).
 
 Reboot status:
 | Question | Answer |
@@ -727,6 +784,8 @@ Open risks:
 - Rebase onto `main` after #473 merges; if #473 released first, move the
   changeset lines into a new patch changeset (see Decisions).
 - One `optimisticAuth` setting per Convex client is a documented rule.
+- Accepted: two kitcn versions or revisions on one page share no page
+  identity until reload (L5).
 
 Hard closeout guard:
 - A local-only final response for verified code-changing work is invalid unless
