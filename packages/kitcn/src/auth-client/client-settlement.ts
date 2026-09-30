@@ -5,6 +5,8 @@ import type { ConvexReactClient } from 'convex/react';
 // recorded there, not in a React effect, so a result reported just before an
 // unmount still counts, every provider over the client hears it, and a local
 // session change (which reports nothing) does not.
+// The wrapper is installed by the first provider with `optimisticAuth` over a
+// client; results reported before that are not seen.
 const settledClients = new WeakSet<object>();
 const listeners = new WeakMap<object, Set<() => void>>();
 const watchedClients = new WeakSet<object>();

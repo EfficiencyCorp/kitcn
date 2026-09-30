@@ -2621,6 +2621,49 @@ describe('ConvexAuthProvider', () => {
       expect(second.result.current.auth.isAuthenticated).toBe(true);
     });
 
+    test('the settlement wrapper is installed only with optimisticAuth, once', async () => {
+      class StubClient {
+        setAuth(_fetchToken: unknown, _onChange?: unknown) {}
+        clearAuth() {}
+        close = async () => {};
+      }
+      const authClient = {
+        useSession: () => ({ data: null, isPending: true }),
+        convex: { token: async () => ({ data: {} }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const mount = (client: StubClient, optimisticAuth: boolean) =>
+        renderHook(() => useAuth(), {
+          wrapper: ({ children }: { children: ReactNode }) => (
+            <ConvexAuthProvider
+              authClient={authClient as any}
+              client={client as any}
+              initialToken={makeJwt(3600)}
+              optimisticAuth={optimisticAuth}
+            >
+              {children}
+            </ConvexAuthProvider>
+          ),
+        });
+
+      const plain = new StubClient();
+      mount(plain, false);
+      await flush();
+      expect(Object.hasOwn(plain, 'setAuth')).toBe(false);
+      expect(plain.setAuth).toBe(StubClient.prototype.setAuth);
+
+      const optimistic = new StubClient();
+      mount(optimistic, true);
+      await flush();
+      const wrapped = optimistic.setAuth;
+      expect(Object.hasOwn(optimistic, 'setAuth')).toBe(true);
+      mount(optimistic, true);
+      await flush();
+      expect(optimistic.setAuth).toBe(wrapped);
+    });
+
     test('a throwing onTokenIdentityChange still closes the client', async () => {
       const onTokenIdentityChange = mock(() => {
         throw new Error('callback failed');

@@ -410,9 +410,12 @@ export function ConvexAuthProvider({
 }: ConvexAuthProviderProps) {
   // Handle cross-domain one-time token
   useOTTHandler(authClient);
-  // Record the client's auth results where Convex reports them, before any
-  // provider hands it a fetcher. Idempotent per client.
-  useMemo(() => watchClientSettlement(client), [client]);
+  // With optimisticAuth, record the client's auth results where Convex
+  // reports them, before this provider hands it a fetcher. Without it the
+  // client is left untouched. Idempotent per client: never wrapped twice.
+  useMemo(() => {
+    if (optimisticAuth) watchClientSettlement(client);
+  }, [client, optimisticAuth]);
 
   // With the identity guard, the SSR token is admitted before it is
   // published: a token for another identity never enters the store, never
