@@ -5,7 +5,8 @@
 // - The trip: once any guard refuses a token of another identity, every
 //   mounted provider publishes unauthenticated and hands out no token, and
 //   providers, clients and loaders created later start tripped.
-// - The document identity: the first identity a guard admits, so a token
+// - The document identity: the first identity a guard knows (from its
+//   baseline, its held SSR token or its first admitted token), so a token
 //   handed out without a provider (the Start loader) is held to it.
 let tripped = false;
 let documentIdentity: string | null = null;
@@ -34,13 +35,19 @@ export const recordDocumentIdentity = (identity: string) => {
 
 /**
  * Whether a token handed out outside a provider may be used: never after a
- * trip, and only for the identity the document already admitted, if any.
+ * trip, and only for the identity the document already knows, if any. A
+ * token of another identity trips the document.
  */
-export const admitsDocumentToken = (token: string) => {
+export const admitDocumentToken = (token: string) => {
   if (tripped) return false;
-  return (
-    documentIdentity === null || decodeTokenIdentity(token) === documentIdentity
-  );
+  if (
+    documentIdentity === null ||
+    decodeTokenIdentity(token) === documentIdentity
+  ) {
+    return true;
+  }
+  tripDocument();
+  return false;
 };
 
 /**

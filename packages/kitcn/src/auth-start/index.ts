@@ -1,4 +1,5 @@
-import { admitsDocumentToken } from '../react/identity-guard-trip';
+import { settleClient } from '../auth-client/client-settlement';
+import { admitDocumentToken } from '../react/identity-guard-trip';
 
 export type MaybePromise<T> = Promise<T> | T;
 
@@ -49,9 +50,10 @@ export const syncConvexAuthForStartLoader = async ({
     : undefined;
   const loaderToken = (await getToken()) ?? null;
   // In the browser, the token identity guard's document state applies here
-  // too: nothing after a trip, and only the identity the document admitted.
+  // too: nothing after a trip, and only the identity the document knows (a
+  // token of another identity trips the document).
   const token =
-    loaderToken !== null && !admitsDocumentToken(loaderToken)
+    loaderToken !== null && !admitDocumentToken(loaderToken)
       ? null
       : loaderToken;
   const previousToken = startLoaderAuthTokens.get(convex);
@@ -68,8 +70,10 @@ export const syncConvexAuthForStartLoader = async ({
     return { isAuthenticated: false, token };
   }
 
-  // Checked again at every hand-out: a later trip applies at once.
-  authClient.setAuth(async () => (admitsDocumentToken(token) ? token : null));
+  // The loader authenticates before any provider renders, so no optimistic
+  // window opens over this client. Checked again at every hand-out.
+  settleClient(authClient);
+  authClient.setAuth(async () => (admitDocumentToken(token) ? token : null));
   serverHttpClient?.setAuth(token);
   return { isAuthenticated: true, token };
 };

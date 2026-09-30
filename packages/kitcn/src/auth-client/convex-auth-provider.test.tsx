@@ -14,6 +14,7 @@ import {
   useFetchAccessToken,
 } from '../react/auth-store';
 import {
+  isDocumentTripped,
   resetDocumentTripForTests,
   tripDocument,
 } from '../react/identity-guard-trip';
@@ -2813,6 +2814,55 @@ describe('ConvexAuthProvider', () => {
       );
       expect(published).not.toContain(true);
       expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+    });
+
+    test('the Start loader refuses another identity before the provider fetches, from its baseline or held token', async () => {
+      for (const setup of [
+        { baseline: 'user_a|session_a' },
+        { initialToken: identityJwt('user_a', 'session_a') },
+      ]) {
+        resetDocumentTripForTests();
+        const harness = convexHarness({ ...setup, session: 'pending' });
+        await flush();
+
+        const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+        const state = await syncConvexAuthForStartLoader({
+          convex: fresh,
+          getToken: async () => identityJwt('user_b', 'session_b'),
+        });
+
+        expect(state).toEqual({ isAuthenticated: false, token: null });
+        expect(fresh.setAuth).toHaveBeenCalledTimes(0);
+        expect(isDocumentTripped()).toBe(true);
+        harness.unmount();
+      }
+    });
+
+    test('a client the Start loader authenticated gets no optimistic window; a fresh one does', async () => {
+      const token = makeJwt(3600);
+      const loaded = makeConvexClient();
+      await syncConvexAuthForStartLoader({
+        convex: loaded.client as any,
+        getToken: async () => token,
+      });
+      const overLoaded = convexHarness({
+        convex: loaded,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(overLoaded.result.current.auth.isAuthenticated).toBe(false);
+
+      const fresh = convexHarness({
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(fresh.result.current.auth.isAuthenticated).toBe(true);
     });
 
     test('a throwing onTokenIdentityChange still closes the client', async () => {

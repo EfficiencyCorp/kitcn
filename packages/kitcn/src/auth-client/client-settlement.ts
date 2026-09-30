@@ -20,14 +20,18 @@ export function watchClientSettlement(client: ConvexReactClient) {
     setAuth(
       fetchToken,
       (isAuthenticated) => {
-        settle(client);
+        settleClient(client);
         onChange?.(isAuthenticated);
       },
       onRefreshChange
     );
 }
 
-function settle(client: object) {
+/**
+ * Marks the client settled: its optimistic window is over, or never opens.
+ * The Start loader calls it when it sets auth before any provider renders.
+ */
+export function settleClient(client: object) {
   if (settledClients.has(client)) return;
   settledClients.add(client);
   for (const listener of [...(listeners.get(client) ?? [])]) listener();

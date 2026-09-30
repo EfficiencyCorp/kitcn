@@ -574,6 +574,12 @@ function ConvexAuthProviderInner({
     // An inherited trip already ran its side effects (close, callback).
     tripSettled: inheritedTrip,
   };
+  // The identity this guard already knows (baseline or held SSR token)
+  // becomes the page's at mount, before any fetch, so a token handed out
+  // outside a provider (the Start loader) is held to it too.
+  if (onTokenIdentityChange && identityGuardRef.current.identity) {
+    recordDocumentIdentity(identityGuardRef.current.identity);
+  }
   const [guardTripped, setGuardTripped] = useState(
     refusedInitialToken || inheritedTrip
   );
