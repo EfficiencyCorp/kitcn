@@ -1,0 +1,49 @@
+import type { ConvexReactClient } from 'convex/react';
+
+// A Convex client's optimistic window ends at its first auth result: the
+// value Convex reports through the `onChange` it is given in `setAuth`. It is
+// recorded there, not in a React effect, so a result reported just before an
+// unmount still counts, every provider over the client hears it, and a local
+// session change (which reports nothing) does not.
+const settledClients = new WeakSet<object>();
+const listeners = new WeakMap<object, Set<() => void>>();
+const watchedClients = new WeakSet<object>();
+
+/** Wraps the client's `setAuth` once, so every `onChange` records settlement. */
+export function watchClientSettlement(client: ConvexReactClient) {
+  if (watchedClients.has(client)) return;
+  watchedClients.add(client);
+  const setAuth = client.setAuth.bind(client);
+  client.setAuth = (fetchToken, onChange, onRefreshChange) =>
+    setAuth(
+      fetchToken,
+      (isAuthenticated) => {
+        settle(client);
+        onChange?.(isAuthenticated);
+      },
+      onRefreshChange
+    );
+}
+
+function settle(client: object) {
+  if (settledClients.has(client)) return;
+  settledClients.add(client);
+  for (const listener of [...(listeners.get(client) ?? [])]) listener();
+}
+
+export const isClientSettled = (client: object) => settledClients.has(client);
+
+export const subscribeClientSettlement = (
+  client: object,
+  listener: () => void
+) => {
+  let clientListeners = listeners.get(client);
+  if (!clientListeners) {
+    clientListeners = new Set();
+    listeners.set(client, clientListeners);
+  }
+  clientListeners.add(listener);
+  return () => {
+    clientListeners.delete(listener);
+  };
+};

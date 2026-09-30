@@ -8,7 +8,14 @@ import type { AuthTokenFetcher } from 'convex/browser';
 import type { ConvexReactClient } from 'convex/react';
 import { useConvexAuth } from 'convex/react';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { CRPCClientError, defaultIsUnauthorized } from '../crpc/error';
 import {
@@ -39,6 +46,11 @@ import {
   registerTokenAdmission,
   type TokenAdmission,
 } from '../react/token-gate';
+import {
+  isClientSettled,
+  subscribeClientSettlement,
+  watchClientSettlement,
+} from './client-settlement';
 import type { ConvexAuthProviderClient } from './types';
 
 type AuthClientFetch = ConvexAuthProviderClient & {
@@ -396,6 +408,9 @@ export function ConvexAuthProvider({
 }: ConvexAuthProviderProps) {
   // Handle cross-domain one-time token
   useOTTHandler(authClient);
+  // Record the client's auth results where Convex reports them, before any
+  // provider hands it a fetcher. Idempotent per client.
+  useMemo(() => watchClientSettlement(client), [client]);
 
   // With the identity guard, the SSR token is admitted before it is
   // published: a token for another identity never enters the store, never
@@ -994,22 +1009,21 @@ function AuthStateSync({
   const { isLoading: convexIsLoading, isAuthenticated } = useConvexAuth();
   const authStore = useAuthStore();
   const token = useAuthValue('token');
-  // Whether Convex was confirming a held token on the previous run.
-  const confirmingRef = useRef(false);
+  // Whether the client has reported an auth result, to any provider.
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeClientSettlement(client, listener),
+    [client]
+  );
+  const getSettled = useCallback(() => isClientSettled(client), [client]);
+  const settled = useSyncExternalStore(subscribe, getSettled, getSettled);
 
   useEffect(() => {
-    // The client's first auth result (confirmed, or refused while it was
-    // confirming a held token) ends its optimistic window for its lifetime.
-    if (!convexIsLoading && (isAuthenticated || confirmingRef.current)) {
-      settledClients.add(client);
-    }
-    confirmingRef.current = convexIsLoading && token !== null;
     const gate = resolveAuthGate({
       canOpenGate,
       convexIsLoading,
       guardTripped,
       isAuthenticated,
-      optimisticWindow: optimisticAuth && !settledClients.has(client),
+      optimisticWindow: optimisticAuth && !settled,
       token,
     });
 
@@ -1017,11 +1031,11 @@ function AuthStateSync({
     authStore.set('isAuthenticated', gate.isAuthenticated);
   }, [
     canOpenGate,
-    client,
     convexIsLoading,
     guardTripped,
     isAuthenticated,
     optimisticAuth,
+    settled,
     token,
     authStore,
   ]);
@@ -1124,13 +1138,6 @@ function admitTokenIdentity(guard: IdentityGuard, token: string): boolean {
   if (identity !== '') guard.identity = identity;
   return true;
 }
-
-/**
- * Convex clients that have reported an auth result. The optimistic window of
- * a client lasts only until its first result: after that, the gate follows
- * Convex's confirmed state for the client's lifetime, remounts included.
- */
-const settledClients = new WeakSet<object>();
 
 type AuthGateInput = {
   canOpenGate: (token: string) => boolean;

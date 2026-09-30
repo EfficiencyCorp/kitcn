@@ -2532,6 +2532,95 @@ describe('ConvexAuthProvider', () => {
       expect(store.get('token')).toBeNull();
     });
 
+    test("a client's auth result reported before React commits still ends its optimistic window", async () => {
+      for (const result of [false, true]) {
+        const token = makeJwt(3600);
+        const convex = makeConvexClient();
+        const first = convexHarness({
+          convex,
+          guard: false,
+          initialToken: token,
+          optimisticAuth: true,
+          session: 'pending',
+        });
+        await flush();
+        act(() => {
+          convex.bindings.at(-1)!.onChange(result);
+          first.unmount();
+        });
+
+        const second = convexHarness({
+          convex,
+          guard: false,
+          initialToken: token,
+          optimisticAuth: true,
+          session: 'pending',
+        });
+        await flush();
+        expect(second.result.current.auth.isAuthenticated).toBe(false);
+        second.unmount();
+      }
+    });
+
+    test("one provider's refusal ends the optimistic window of another over the same client", async () => {
+      const token = makeJwt(3600);
+      const convex = makeConvexClient();
+      const first = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      const second = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(first.result.current.auth.isAuthenticated).toBe(true);
+      expect(second.result.current.auth.isAuthenticated).toBe(true);
+
+      await act(async () => {
+        convex.bindings[0]!.onChange(false);
+      });
+      await flush();
+
+      expect(second.result.current.auth.isAuthenticated).toBe(false);
+    });
+
+    test('losing the local session does not end a fresh client optimistic window', async () => {
+      const token = makeJwt(3600);
+      const convex = makeConvexClient();
+      const sessionRef = { current: 'active' as 'active' | 'none' | 'pending' };
+      const first = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        sessionRef,
+      });
+      await flush();
+      expect(first.result.current.auth.isAuthenticated).toBe(true);
+      sessionRef.current = 'none';
+      await act(async () => first.rerender());
+      await flush();
+      first.unmount();
+
+      const second = convexHarness({
+        convex,
+        guard: false,
+        initialToken: token,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(second.result.current.auth.isAuthenticated).toBe(true);
+    });
+
     test('a throwing onTokenIdentityChange still closes the client', async () => {
       const onTokenIdentityChange = mock(() => {
         throw new Error('callback failed');
