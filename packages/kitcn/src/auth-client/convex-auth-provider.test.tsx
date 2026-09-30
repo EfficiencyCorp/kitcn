@@ -1,5 +1,5 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, Suspense, useEffect } from 'react';
 import { syncConvexAuthForStartLoader } from '../auth-start';
 import { AuthMutationError } from '../crpc/auth-error';
 import { createAuthMutations } from '../react/auth-mutations';
@@ -3288,6 +3288,88 @@ describe('ConvexAuthProvider', () => {
 
       expect(second.result.current.auth.isAuthenticated).toBe(false);
       expect(second.result.current.auth.isLoading).toBe(true);
+    });
+
+    test('the Start loader holds a token to both the recorded page identity and the current getter', async () => {
+      const document = { identity: 'user_a|session_a' };
+      const readBaseline = mock(() => document.identity);
+      const tokenForA = identityJwt('user_a', 'session_a');
+      const harness = convexHarness({
+        baseline: readBaseline,
+        tokens: [tokenForA],
+      });
+      await flush();
+      expect(await harness.fetch(false)).toBe(tokenForA);
+      document.identity = 'user_b|session_b';
+      readBaseline.mockClear();
+
+      const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+      let state: unknown;
+      await act(async () => {
+        state = await syncConvexAuthForStartLoader({
+          convex: fresh,
+          getToken: async () => tokenForA,
+        });
+      });
+
+      expect(state).toEqual({ isAuthenticated: false, token: null });
+      expect(readBaseline).toHaveBeenCalled();
+    });
+
+    test('a sibling provider without a baseline cannot admit another identity after the page admitted one', async () => {
+      const first = convexHarness({
+        tokens: [identityJwt('user_a', 'session_a')],
+      });
+      const second = convexHarness({
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      expect(await first.fetch(false)).not.toBeNull();
+
+      expect(await second.fetch(false)).toBeNull();
+      expect(second.result.current.store.get('token')).toBeNull();
+      expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+    });
+
+    test('an identity recorded in an abandoned render does not quarantine the page', async () => {
+      const never = new Promise<never>(() => {});
+      const Suspender = () => {
+        throw never;
+      };
+      const authClient = {
+        useSession: () => ({ data: null, isPending: true }),
+        convex: { token: async () => ({ data: {} }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+      const view = render(
+        <Suspense fallback={null}>
+          <ConvexAuthProvider
+            authClient={authClient as any}
+            client={makeConvexClient().client as any}
+            onTokenIdentityChange={() => {}}
+            tokenIdentityBaseline="user_a|session_a"
+          >
+            <Suspender />
+          </ConvexAuthProvider>
+        </Suspense>
+      );
+      await flush();
+      view.unmount();
+
+      const tokenForB = identityJwt('user_b', 'session_b');
+      const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+      let state: unknown;
+      await act(async () => {
+        state = await syncConvexAuthForStartLoader({
+          convex: fresh,
+          getToken: async () => tokenForB,
+        });
+      });
+
+      expect(state).toEqual({ isAuthenticated: true, token: tokenForB });
+      expect(isDocumentTripped()).toBe(false);
     });
 
     test('a remount with a fresh client cannot reopen the document after a trip', async () => {

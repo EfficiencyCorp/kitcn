@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,6 +41,7 @@ import {
   isDocumentTripped,
   isJwt,
   recordDocumentIdentity,
+  recordedDocumentIdentity,
   registerDocumentIdentitySource,
   subscribeDocumentTrip,
   tripDocument,
@@ -418,6 +420,8 @@ export function ConvexAuthProvider({
   // With optimisticAuth, record the client's auth results where Convex
   // reports them, before this provider hands it a fetcher. Without it the
   // client is left untouched. Idempotent per client: never wrapped twice.
+  // Installing it in a render React later discards is harmless: the wrapper
+  // only forwards `setAuth` and records the results Convex reports.
   useMemo(() => {
     if (optimisticAuth) watchClientSettlement(client);
   }, [client, optimisticAuth]);
@@ -436,7 +440,8 @@ export function ConvexAuthProvider({
       !!initialToken &&
       refusesHeldToken(
         initialToken,
-        resolveTokenIdentityBaseline(tokenIdentityBaseline)
+        resolveTokenIdentityBaseline(tokenIdentityBaseline) ??
+          recordedDocumentIdentity()
       )
   );
 
@@ -583,12 +588,15 @@ function ConvexAuthProviderInner({
     tripSettled: inheritedTrip,
   };
   // The identity this guard already knows (a fixed baseline or the held SSR
-  // token) becomes the page's at mount, so a token handed out outside a
-  // provider (the Start loader) is held to it too; a getter baseline is read
-  // only when such a token is admitted.
-  if (onTokenIdentityChange && identityGuardRef.current.identity) {
-    recordDocumentIdentity(identityGuardRef.current.identity);
-  }
+  // token) becomes the page's when the provider commits (a render React
+  // discards records nothing), before any passive effect hands Convex a
+  // fetcher; a getter baseline is read only when a token is admitted.
+  useLayoutEffect(() => {
+    const known = identityGuardRef.current?.identity;
+    if (onTokenIdentityChangeRef.current && known) {
+      recordDocumentIdentity(known);
+    }
+  }, []);
   const hasGetterBaseline =
     !!onTokenIdentityChange && typeof tokenIdentityBaseline === 'function';
   useEffect(() => {
@@ -675,7 +683,8 @@ function ConvexAuthProviderInner({
     [tripGuard]
   );
   // Registered during render so it is in place before any effect or
-  // mutation publishes a token; re-registering is idempotent.
+  // mutation publishes a token; re-registering is idempotent, and a render
+  // React discards leaves an entry keyed by a store nothing else holds.
   registerTokenAdmission(authStore, admitIdentity);
 
   // Whether a held token may open the optimistic gate: never after a trip,
@@ -1107,12 +1116,18 @@ function judgeTokenIdentity(
   const current = guard.currentDocumentIdentity
     ? guard.currentDocumentIdentity()
     : null;
+  // The identity another provider already recorded for the page binds this
+  // one too.
+  const page = recordedDocumentIdentity();
   if (identity === null) {
-    return guard.identity === null && current === null ? '' : null;
+    return guard.identity === null && current === null && page === null
+      ? ''
+      : null;
   }
   const matchesGuard = guard.identity === null || guard.identity === identity;
   const matchesDocument = current === null || current === identity;
-  return matchesGuard && matchesDocument ? identity : null;
+  const matchesPage = page === null || page === identity;
+  return matchesGuard && matchesDocument && matchesPage ? identity : null;
 }
 
 /**

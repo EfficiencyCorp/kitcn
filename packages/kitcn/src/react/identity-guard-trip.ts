@@ -52,16 +52,19 @@ export const recordDocumentIdentity = (identity: string) => {
 export const admitDocumentToken = (token: string) => {
   const registry = identityGuardRegistry();
   if (registry.tripped) return false;
-  const expected = registry.documentIdentity ?? currentSourceIdentity();
-  if (
-    expected === null ||
-    decodeTokenSubjectSessionIdentity(token) === expected
-  ) {
+  const identity = decodeTokenSubjectSessionIdentity(token);
+  // Both the recorded page identity and every getter's current answer.
+  const expected = [registry.documentIdentity, ...currentSourceIdentities()];
+  if (expected.every((known) => known === null || known === identity)) {
     return true;
   }
   tripDocument();
   return false;
 };
+
+/** The identity recorded for the page, or null. */
+export const recordedDocumentIdentity = () =>
+  identityGuardRegistry().documentIdentity;
 
 /**
  * Registers a `tokenIdentityBaseline` getter, read only when a token is
@@ -75,13 +78,8 @@ export const registerDocumentIdentitySource = (source: () => string | null) => {
   };
 };
 
-const currentSourceIdentity = () => {
-  for (const source of identityGuardRegistry().identitySources) {
-    const identity = source();
-    if (identity !== null) return identity;
-  }
-  return null;
-};
+const currentSourceIdentities = () =>
+  [...identityGuardRegistry().identitySources].map((source) => source());
 
 /** A JWT's payload: three segments whose middle one is a JSON object. */
 function decodeJwtClaims(token: string): Record<string, unknown> | null {
