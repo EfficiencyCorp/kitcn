@@ -309,7 +309,7 @@ Completion Gates:
 | Browser surface changed | no | Capture Browser Use proof or record explicit waiver/blocker | N/A |
 | Browser final proof | no | Attach screenshot or exact browser verification caveat when browser proof applies | N/A |
 | UI walkthrough | no | If UI or rendered output changed, run `.agents/skills/walkthrough/SKILL.md` after final proof and show annotated images in the final handoff; otherwise record N/A | N/A: no rendered output |
-| Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A: no scaffold change; on the 0.33.6 base `fixtures:check` fails on the `next` fixture because create-next-app's generated `AGENTS.md` text changed upstream (the earlier `expo` drift was fixed in #473's squash) |
+| Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A for scaffold code: no scaffold change. Snapshots resynced in a separate commit because the upstream templates drifted after 0.33.6's CI; `fixtures:check` exit 0 |
 | Package behavior or public API changed | yes | Add a changeset or record why no changeset applies | New patch changeset |
 | Docs and kitcn skill sync changed | yes | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | `client.mdx` and skill `auth.md` updated and synced |
 | Docs or content changed | yes | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | Claims checked against source and tests; MDX compiles |
@@ -780,6 +780,12 @@ Timeline:
 - 2026-09-30 Round H4: live guardedness, loader claims on guarded pages,
   admission between publication writes, loader trip after setAuth
   (7b9924d6).
+- 2026-09-30 CI on #475: every lane passed except `fixtures:check`, whose
+  scaffold snapshots drifted from the current upstream templates
+  (create-next-app 16.3.6, TanStack Start, Vite) after 0.33.6's CI ran. A
+  separate commit resyncs them with `bun run fixtures:sync` (28 files under
+  `fixtures/`, no kitcn source or scaffold change); `fixtures:check` exit 0
+  locally afterwards.
 - 2026-09-30 Round H5 (after #475 opened; found by porting this branch into
   a consumer app whose provider remounts per route group): a trip that
   happened while no guarded provider was mounted (a token refresh finishing
