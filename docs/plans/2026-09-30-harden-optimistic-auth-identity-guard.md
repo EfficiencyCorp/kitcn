@@ -22,7 +22,7 @@ Applied packs:
 Task source:
 - type: single-PR bug-fix follow-up, one package
 - id / link: follow-up to https://github.com/udecode/kitcn/pull/473 (merged
-  as 16e0bb46, released in 0.33.6); this PR is not yet created. Branch
+  as 16e0bb46, released in 0.33.6). This PR: https://github.com/udecode/kitcn/pull/475 (#475). Branch
   `feat/optimistic-auth-hardening-v2`, based on `main` 126f3e99. The work
   was built on #473's head fcbd2f84 (branch `feat/optimistic-auth-hardening`,
   last 67119913) and carried over as its net diff; the squash differs from
@@ -309,7 +309,7 @@ Completion Gates:
 | Browser surface changed | no | Capture Browser Use proof or record explicit waiver/blocker | N/A |
 | Browser final proof | no | Attach screenshot or exact browser verification caveat when browser proof applies | N/A |
 | UI walkthrough | no | If UI or rendered output changed, run `.agents/skills/walkthrough/SKILL.md` after final proof and show annotated images in the final handoff; otherwise record N/A | N/A: no rendered output |
-| Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A: no scaffold change; `fixtures:check` drift is pre-existing (reproduces on `main`) |
+| Scaffold or fixture output changed | no | Run `bun run fixtures:sync` and `bun run fixtures:check`, or record N/A | N/A: no scaffold change; on the 0.33.6 base `fixtures:check` fails on the `next` fixture because create-next-app's generated `AGENTS.md` text changed upstream (the earlier `expo` drift was fixed in #473's squash) |
 | Package behavior or public API changed | yes | Add a changeset or record why no changeset applies | New patch changeset |
 | Docs and kitcn skill sync changed | yes | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | `client.mdx` and skill `auth.md` updated and synced |
 | Docs or content changed | yes | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | Claims checked against source and tests; MDX compiles |
@@ -716,9 +716,16 @@ Source-listed case matrix:
 | 12 | Settlement recorded where Convex reports it; loader settles its client | provider tests | missed | settled | pass | done |
 | 13 | Auth-state publication reads current trip and settlement | provider tests | stale `true` | never | pass | done |
 
+- Final-head snapshot (Bun 1.3.9, base `main` 126f3e99, commit 88fb6c4f; content identical to 67119913 in `packages/kitcn/src`, `www`, skills and `.agents`):
+  - `bun install` exit 0; `bun --cwd packages/kitcn build` exit 0.
+  - Focused suites (provider, context, auth-mutations, use-query-options, client, auth-start retry): exit 0. Built entrypoints: exit 0.
+  - `bun run check:ci`: lint (979 files, no fixes), typecheck 6/6 packages, `test:bun` 1554 pass / 0 fail (155 files), `test:vitest` 1053 pass / 14 skipped, `test:cli` 124 pass, Concave smoke passed; exit 1 only at `fixtures:check` on the `next` fixture (create-next-app `AGENTS.md` text changed upstream; no fixture or scaffold change in this PR).
+  - `bun run test:verify`: exit 0.
+  - `test:runtime`: not run locally (port 3210 held by an unrelated local backend).
+
 Final handoff contract:
 - Commit line: runtime, docs and plan commits on `feat/optimistic-auth-hardening`.
-- PR line: not yet created; follow-up to #473.
+- PR line: https://github.com/udecode/kitcn/pull/475 (#475), follow-up to #473.
 - Issue line: `🐛 Fixes ➖ N/A`
 - Confidence line: `🟢 90% confidence`
 - Flow table:
@@ -756,8 +763,8 @@ Task-style PR body contract:
   of that output.
 
 Final handoff / sync:
-- Commit: local commits on `feat/optimistic-auth-hardening`.
-- PR: not yet created (after #473 merges).
+- Commit: 88fb6c4f (net content of `feat/optimistic-auth-hardening` 67119913 on `main` 126f3e99) plus this plan update, branch `feat/optimistic-auth-hardening-v2`.
+- PR: https://github.com/udecode/kitcn/pull/475 (#475).
 - Issue: N/A.
 - Browser proof: N/A.
 - Caveats: fixture drift; `test:runtime`; autoreview.
