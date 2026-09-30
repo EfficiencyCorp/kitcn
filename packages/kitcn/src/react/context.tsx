@@ -35,6 +35,7 @@ import {
   type VanillaHttpCRPCClientFromRouter,
 } from './http-proxy';
 import { createCRPCOptionsProxy } from './proxy';
+import { admitToken } from './token-gate';
 import { createVanillaCRPCProxy } from './vanilla-client';
 
 // ============================================================================
@@ -249,7 +250,10 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
               typeof httpOptions.headers === 'function'
                 ? await httpOptions.headers()
                 : httpOptions.headers;
-            return guardedToken
+            // The app's headers may have taken a while: the token gate
+            // decides again right before the token is attached.
+            return guardedToken &&
+              admitToken(authStore, guardedToken, { announce: false })
               ? { ...userHeaders, Authorization: `Bearer ${guardedToken}` }
               : { ...userHeaders };
           }
