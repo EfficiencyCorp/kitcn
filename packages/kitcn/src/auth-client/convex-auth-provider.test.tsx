@@ -2307,7 +2307,7 @@ describe('ConvexAuthProvider', () => {
       expect(harness.result.current.store.get('isAuthenticated')).toBe(false);
     });
 
-    test('a later provider over a tripped client starts tripped', async () => {
+    test('a later provider over a tripped client starts tripped and still reports the trip once', async () => {
       const convex = makeConvexClient();
       const first = convexHarness({
         convex,
@@ -2331,8 +2331,15 @@ describe('ConvexAuthProvider', () => {
 
       expect(second.result.current.store.get('token')).toBeNull();
       expect(second.result.current.auth.isAuthenticated).toBe(false);
-      expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(0);
-      expect(convex.close).toHaveBeenCalledTimes(1);
+      // A guarded provider joining a page tripped earlier reports the trip
+      // too, so the app learns of a trip even one that happened while no
+      // guarded provider was mounted (once; a rerender does not report it
+      // again).
+      expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(convex.close).toHaveBeenCalledTimes(2);
+      second.rerender();
+      await flush();
+      expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
     });
 
     test('a sign-in on a tripped document surfaces an error and publishes nothing', async () => {

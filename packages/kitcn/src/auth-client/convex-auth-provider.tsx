@@ -144,8 +144,9 @@ export type ConvexAuthProviderProps = {
    * refuses one), this provider stops handing out tokens (null), publishes
    * unauthenticated, calls `client.close()` (Convex's close semantics govern
    * its queued work) and then this, once, where the app should reload the
-   * page. A provider mounted after the trip starts tripped and does not call
-   * it.
+   * page. A provider that mounts (or shows again) on a page that is already
+   * tripped starts tripped and does the same, once, so a trip that happened
+   * while no guarded provider was mounted still reaches the app.
    * The trip is page-wide in the browser (never on the server); sign-in
    * mutations fail with `AuthMutationError` code `TOKEN_IDENTITY_CHANGED`
    * until the reload. It governs the token kitcn supplies, not an
@@ -628,8 +629,12 @@ function ConvexAuthProviderInner({
   const [guardTripped, setGuardTripped] = useState(
     refusedInitialToken || inheritedTrip
   );
-  // An inherited trip already ran its side effects (close, callback).
-  const tripSettledRef = useRef(inheritedTrip);
+  // Whether this provider ran the trip's side effects (close, callback). A
+  // provider joining a page that is already tripped runs them too: a trip can
+  // happen while no guarded provider is mounted (a refresh finishing after
+  // its provider unmounted, the Start loader), and the app must still hear
+  // of it to reload.
+  const tripSettledRef = useRef(false);
   // A fresh token announced when it was admitted, so its hand-out does not
   // announce it a second time.
   const announcedTokenRef = useRef<string | null>(null);

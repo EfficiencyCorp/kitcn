@@ -780,6 +780,19 @@ Timeline:
 - 2026-09-30 Round H4: live guardedness, loader claims on guarded pages,
   admission between publication writes, loader trip after setAuth
   (7b9924d6).
+- 2026-09-30 Round H5 (after #475 opened; found by porting this branch into
+  a consumer app whose provider remounts per route group): a trip that
+  happened while no guarded provider was mounted (a token refresh finishing
+  after its provider unmounted; the Start loader before any provider) never
+  reached `onTokenIdentityChange`, because a provider mounting on a tripped
+  page took `inheritedTrip` as already reported. Fixed, behavioural: every
+  guarded provider that mounts or shows again on a tripped page runs the
+  trip's close and callback once (`tripSettledRef` starts `false`). Test
+  `a later provider over a tripped client starts tripped and still reports
+  the trip once` (renamed from `a later provider over a tripped client
+  starts tripped`; red first: 0 callbacks, expected 1), including that a
+  rerender does not report it again. Provider suite 115 pass, 0 fail. Docs,
+  JSDoc and both skill references updated.
 
 Reboot status:
 | Question | Answer |
