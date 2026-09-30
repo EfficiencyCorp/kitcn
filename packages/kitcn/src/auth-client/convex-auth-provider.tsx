@@ -135,7 +135,9 @@ export type ConvexAuthProviderProps = {
    * terminal for the document (browser only): every mounted provider
    * publishes unauthenticated and hands out no token, later providers and
    * clients start tripped, and sign-in mutations throw `AuthMutationError`
-   * code `TOKEN_IDENTITY_CHANGED`. A reload clears it.
+   * code `TOKEN_IDENTITY_CHANGED`. A reload clears it. Every token cached,
+   * published or handed out (fetcher, restore, a sign-in's returned token)
+   * passes the same check at that moment: trip, then identity admission.
    * While an identity is established, a persisted session token is restored
    * only if it is a JWT for that identity. It governs the token kitcn
    * supplies, not an `Authorization` header the app sets itself.

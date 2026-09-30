@@ -363,7 +363,7 @@ All from `kitcn/react`:
 |------|---------|-------------|
 | `useAuth()` | `{ hasSession, isAuthenticated, isLoading }` | Full auth state |
 | `useMaybeAuth()` | `boolean` | Has token (optimistic, may not be verified) |
-| `useIsAuth()` | `boolean` | Server-verified authentication |
+| `useIsAuth()` | `boolean` | Server-verified authentication (with `optimisticAuth`: also true before Convex confirms a held unexpired JWT; server still enforces auth) |
 | `useAuthGuard()` | `() => boolean` | Guard mutations, returns true if blocked |
 | `useConvexAuthRecovery()` | `{ recover, status, error }` | Rebind Convex auth after a transient token failure |
 
@@ -389,7 +389,7 @@ All from `kitcn/react`:
 | Component | Renders when |
 |-----------|-------------|
 | `MaybeAuthenticated` | Has session token (optimistic) |
-| `Authenticated` | Server-verified authenticated |
+| `Authenticated` | Server-verified authenticated (with `optimisticAuth`: also during the optimistic window before Convex confirms; server still enforces auth) |
 | `MaybeUnauthenticated` | No session token (optimistic) |
 | `Unauthenticated` | Server-verified not authenticated |
 
@@ -415,7 +415,7 @@ All from `kitcn/react`:
 
 Delta from parity:
 - `optimisticAuth` (default `false`): auth-bound queries run before Convex confirms the token, only until the Convex client reports its first auth result (confirmed or refused); after that the gate follows Convex's confirmed state for the client's lifetime, remounts included. Convex authenticates first on the same socket and evaluates none of them if the token is refused; a refused token resets auth-bound queries. Opaque/expired tokens never open it; with the identity guard, only an admissible token does.
-- `onTokenIdentityChange`: the document keeps one identity (JWT `sub` + `sessionId`), from `initialToken` (admitted before it is published) or the first token that carries one. A token for another user/session, or a JWT without an identity once one is established, is refused before it is cached (Convex and cRPC HTTP never use it). Before an identity exists, an identity-less JWT is handed out without setting it. A refusal trips the guard for good: token cleared, store publishes `isAuthenticated: false, isLoading: false` (auth-bound queries reset, gate never reopens), later token requests return `null`, `client.close()` is called (Convex's close semantics govern queued work), then the callback runs. Terminal per document (browser only): every mounted provider publishes unauthenticated and its fetcher returns `null`, later providers and clients start tripped, and sign-in/social sign-in/sign-up throw `AuthMutationError` code `TOKEN_IDENTITY_CHANGED`; a reload clears it. Same-session refreshes pass. Governs the token kitcn supplies, not an `Authorization` header the app sets in `httpOptions.headers`.
+- `onTokenIdentityChange`: the document keeps one identity (JWT `sub` + `sessionId`), from `initialToken` (admitted before it is published) or the first token that carries one. A token for another user/session, or a JWT without an identity once one is established, is refused before it is cached (Convex and cRPC HTTP never use it). Before an identity exists, an identity-less JWT is handed out without setting it. A refusal trips the guard for good: token cleared, store publishes `isAuthenticated: false, isLoading: false` (auth-bound queries reset, gate never reopens), later token requests return `null`, `client.close()` is called (Convex's close semantics govern queued work), then the callback runs. Terminal per document (browser only): every mounted provider publishes unauthenticated and its fetcher returns `null`, later providers and clients start tripped, and sign-in/social sign-in/sign-up throw `AuthMutationError` code `TOKEN_IDENTITY_CHANGED` (also when the trip lands while they wait); a reload clears it. Every token cached, published or handed out (fetcher, restore, sign-in-returned token) passes one check at that moment: trip, then identity admission; a sign-in returning another identity's JWT is refused and trips. Same-session refreshes pass. Governs the token kitcn supplies, not an `Authorization` header the app sets in `httpOptions.headers`.
 - `tokenIdentityBaseline` (`string | null | () => string | null`, needs `onTokenIdentityChange`): identity (`sub|sessionId`) the document already speaks for, for a provider mounted more than once per document (per route group). A plain value is read on the first render only. A getter is read at every admission, cached tokens included (covers providers kept hidden by React `<Activity>`); a getter `null` adds no constraint, but the identity already admitted still constrains later tokens. While an identity is established, a persisted session token is restored only if it is a JWT for that same user and session; an opaque one is not.
 - `onTokenIdentityAdmitted(token)` (needs `onTokenIdentityChange`): called with every token the guard admits (fresh when cached, cached each time handed out), before Convex or HTTP receive it; never a refused one.
 

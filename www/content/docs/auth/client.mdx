@@ -276,7 +276,7 @@ function AuthStatus() {
 | Property | Description |
 |----------|-------------|
 | `hasSession` | Has a session token (may not be verified) |
-| `isAuthenticated` | Token exists AND Convex auth verified |
+| `isAuthenticated` | Token exists AND Convex auth verified. With `optimisticAuth`, also `true` for a held, unexpired JWT before Convex confirms it (see [Optimistic Auth](#optimistic-auth)); the server still enforces auth on every call |
 | `isLoading` | Convex auth is still loading |
 
 ### useMaybeAuth
@@ -294,7 +294,7 @@ function Component() {
 
 ### useIsAuth
 
-Check if user is authenticated (server-verified):
+Check if user is authenticated (server-verified; with `optimisticAuth`, also true during the [optimistic window](#optimistic-auth) before Convex confirms the token, while the server still enforces auth on every call):
 
 ```tsx showLineNumbers {1,4}
 import { useIsAuth } from 'kitcn/react';
@@ -396,7 +396,7 @@ function App() {
 
 ### Authenticated
 
-Render children only when server-verified:
+Render children only when server-verified (with `optimisticAuth`, also during the [optimistic window](#optimistic-auth) before Convex confirms the token; the server still enforces auth on every call):
 
 ```tsx showLineNumbers {1,5-7}
 import { Authenticated } from 'kitcn/react';
@@ -507,7 +507,7 @@ By default, auth-bound queries wait until Convex confirms the token. With `optim
 
 With `onTokenIdentityChange`, a document speaks for one identity (JWT `sub` and `sessionId`): the one it holds when it mounts (`initialToken`, admitted before it is published), or, with none, the first token that carries one. A token for another user or session (a sign-in in another tab) is refused before it is cached, so neither Convex nor cRPC HTTP requests use it. Once an identity is established, a JWT without one is refused too: it cannot prove it is the same identity. Before that, such a token is handed out without setting the identity.
 
-Refusing trips the guard for good. The token is cleared and the store publishes `isAuthenticated: false` and `isLoading: false`, which clears auth-bound queries; the optimistic gate never reopens; every later token request answers `null`; `client.close()` is called (Convex's close semantics govern its queued work); then the callback runs. The trip is terminal for the document (in the browser; never on the server): every mounted provider publishes unauthenticated and its token fetcher answers `null`, a provider or Convex client created later starts tripped, and sign-in, social sign-in and sign-up mutations throw an `AuthMutationError` with code `TOKEN_IDENTITY_CHANGED`. A reload clears it. Same-session refreshes pass through. The guard governs the token kitcn supplies to Convex and cRPC HTTP requests, not an `Authorization` header the app sets itself in `httpOptions.headers`.
+Refusing trips the guard for good. The token is cleared and the store publishes `isAuthenticated: false` and `isLoading: false`, which clears auth-bound queries; the optimistic gate never reopens; every later token request answers `null`; `client.close()` is called (Convex's close semantics govern its queued work); then the callback runs. The trip is terminal for the document (in the browser; never on the server): every mounted provider publishes unauthenticated and its token fetcher answers `null`, a provider or Convex client created later starts tripped, and sign-in, social sign-in and sign-up mutations throw an `AuthMutationError` with code `TOKEN_IDENTITY_CHANGED`, including when the trip happens while they wait. A reload clears it. Every token kitcn caches, publishes or hands out (from the provider's fetcher, a restore, or a sign-in mutation's returned token) passes the same check at that moment: the document trip, then identity admission; a sign-in that returns a JWT for another identity is refused and trips the document. Same-session refreshes pass through. The guard governs the token kitcn supplies to Convex and cRPC HTTP requests, not an `Authorization` header the app sets itself in `httpOptions.headers`.
 
 ```tsx showLineNumbers {4}
 <ConvexAuthProvider
