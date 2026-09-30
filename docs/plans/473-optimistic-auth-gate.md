@@ -189,12 +189,12 @@ Task state:
 - current_phase: closeout
 - current_phase_status: blocked (repository gate and autoreview; see
   Completion threshold)
-- next_phase: requester review of fix round 6, push, PR body application,
+- next_phase: requester review of fix round 7, push, PR body application,
   live compliance read-back; maintainer review continues on the PR
 - goal_status: implementation and local proof complete; closeout blocked
 
 Current verdict:
-- verdict: ready for delta review of fix round 6
+- verdict: ready for delta review of fix round 7
 - confidence: 91%
 - next owner: requester (delta review, push, PR body), then maintainer review
 - reason: every runtime acceptance criterion and every accepted runtime
@@ -405,7 +405,7 @@ Completion Gates:
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Recorded above |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | (d) reproduced by unit test; other rungs N/A with reason |
 | Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | `client.test.ts` with `main`'s `client.ts`: 13 pass, 1 fail, exit 1 |
-| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 146 pass, 0 fail across the 6 focused test files at the final head (144 after round 6, 142 after round 5, 135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
+| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 151 pass, 0 fail across the 6 focused test files at the final head (146 after the round 6 addendum, 144 after round 6, 142 after round 5, 135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
 | TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` exit 0 |
 | Package exports or file layout changed | yes | Run the relevant package build before final verification and keep generated updates | `bun --cwd packages/kitcn build` exit 0; no generated updates |
 | Package manifests, lockfile, or install graph changed | no | Run `bun install` and relevant package checks | N/A: no manifest or lockfile change |
@@ -906,6 +906,25 @@ Review fixes:
   (`kitcn-1596-bodies/round8-red.log`). The concurrent-first-tokens test
   now expects the winning provider's callback once too.
 
+- Round 7 (verification lane on 002a5b62; one P1): JWT classification
+  used `decodeJwtExp(token) === null` as "opaque", so a JWT of another
+  identity with `exp: 0` or no `exp` skipped identity admission.
+  - W1 fixed (63742a09), behavioural: `isJwt` in
+    `react/identity-guard-trip.ts` classifies by structure (three segments,
+    JSON object payload), whatever the `exp`; the token gate, the SSR check
+    and the restore use it, and the Start loader already held tokens to the
+    page identity. Only a JWT with a future `exp` opens the optimistic gate.
+    Tests (red at 002a5b62 unless noted; `kitcn-1596-bodies/round9-red.log`):
+    `a JWT of another identity is refused whatever its exp: refresh and
+    HTTP`, `a held SSR JWT of another identity is withheld whatever its
+    exp`, `a sign-in returning a JWT of another identity fails whatever its
+    exp`; regression (passed before, loader was identity-based already):
+    `the Start loader refuses a JWT of another identity whatever its exp`;
+    control: `a JWT without exp of the established identity is handed out
+    but never opens the optimistic gate`. Opaque-credential tests unchanged
+    and green. The token-exchange path that sends a cached opaque session
+    token as bearer still classifies by `exp` (out of this finding's scope).
+
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
 |------------------------|-------|---------------------|------------|
@@ -1068,7 +1087,7 @@ Verification evidence:
     passed", `intent:stale` "All skills up-to-date".
   - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
     as blocked or handed-off; not closure).
-- Final head (current; Bun 1.3.9, HEAD f8ff0ae1 plus this plan):
+- Historical snapshot, round 6 addendum (Bun 1.3.9, HEAD f8ff0ae1 plus this plan):
   - `bun --cwd packages/kitcn build`: exit 0.
   - Focused (`convex-auth-provider.test.tsx` 85, `context.test.tsx` 11,
     `auth-mutations.test.tsx` 11, `use-query-options.test.tsx` 24,
@@ -1083,6 +1102,21 @@ Verification evidence:
   - `test:verify`: exit 0.
   - Docs: `client.mdx` compiles; skill mirror synced; `intent:validate` "all
     passed", `intent:stale` "All skills up-to-date".
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Final head (current; Bun 1.3.9, HEAD 63742a09 plus this plan):
+  - `bun --cwd packages/kitcn build`: exit 0.
+  - Focused (`convex-auth-provider.test.tsx` 90, `context.test.tsx` 11,
+    `auth-mutations.test.tsx` 11, `use-query-options.test.tsx` 24,
+    `client.test.ts` 14, `index.retry.test.ts` 1): 151 pass, 0 fail,
+    exit 0, 0 `act` warnings.
+  - `bun lint:fix`: exit 0, 978 files, no fixes applied, source unchanged.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint (biome 978 files, eslint), typecheck 5/5,
+    `test:bun` 1518 pass / 0 fail (154 files), `test:vitest` 1053 pass / 14
+    skipped, no type errors, `test:cli` 124 pass / 0 fail, `test:concave`
+    "Concave smoke passed".
+  - `test:verify`: exit 0.
   - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
     as blocked or handed-off; not closure).
 - `test:runtime`: not run locally. Its `expo` scenario needs port 3210,
@@ -1131,6 +1165,7 @@ Source-listed case matrix:
 | 40 | Start loader refuses another identity known from a provider's baseline or held token at mount | provider test (V1) | B handed out (red) | refused, page tripped | pass | done |
 | 41 | No optimistic window over a loader-authenticated client; fresh client keeps it | provider test (V2) | window opened (red) | closed; control open | pass | done |
 | 42 | A trip from any source calls each mounted guarded provider's callback once, after closing its client | provider tests (round 6 addendum) | callback 0 (red) | once each | pass | done |
+| 43 | A JWT of another identity is refused whatever its exp (refresh, HTTP, SSR, sign-in, loader); an exp-less JWT of the established identity is handed out but never opens the gate | provider tests (W1) | exp 0 or no exp B published and handed out (red) | refused, trips | pass | done |
 | 25 | Refusal memory pruned and bounded | superseded by S1: `TokenRefusals` and its tests deleted | N/A | N/A | N/A | superseded |
 | 26 | Optimistic window ends at the client's first auth result; no refusal count, post-confirmation refusal or remount reopens it | provider tests (S1) | reopened (red) | closed | pass | done |
 | 27 | Hard load: a fresh client with an SSR token still opens before confirmation | provider test (S1 control) | open | open | pass | done |
@@ -1146,7 +1181,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: server logger red (1 fail); features N/A; browser N/A
-  - Verified: 146 focused pass, full `test:bun` 1513/0, `bun check` lanes
+  - Verified: 151 focused pass, full `test:bun` 1518/0, `bun check` lanes
     the diff can affect pass (stops at pre-existing fixture drift); browser
     N/A
 - Browser check: N/A, no rendered UI.
@@ -1177,10 +1212,10 @@ Task-style PR body contract:
 - Never include a line that links to the current PR itself.
 
 Final handoff / sync:
-- Commit: thirty-four local commits on `feat/optimistic-auth-gate` (four
+- Commit: thirty-six local commits on `feat/optimistic-auth-gate` (four
   before review, four in fix round 1, five in fix round 2, five in fix
   round 3, six in fix round 4 including its addendum, three in fix round
-  5, seven in fix round 6 including its addendum).
+  5, seven in fix round 6 including its addendum, two in fix round 7).
 - PR: #473.
 - Issue: N/A.
 - Browser proof: N/A.
