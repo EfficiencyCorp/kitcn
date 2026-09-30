@@ -2695,9 +2695,13 @@ describe('ConvexAuthProvider', () => {
       expect(await harness.fetch(false)).not.toBeNull();
 
       const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
-      const state = await syncConvexAuthForStartLoader({
-        convex: fresh,
-        getToken: async () => identityJwt('user_b', 'session_b'),
+      let state: unknown;
+      // Refusing trips the page, which quarantines the mounted provider.
+      await act(async () => {
+        state = await syncConvexAuthForStartLoader({
+          convex: fresh,
+          getToken: async () => identityJwt('user_b', 'session_b'),
+        });
       });
 
       expect(state).toEqual({ isAuthenticated: false, token: null });
@@ -2826,9 +2830,13 @@ describe('ConvexAuthProvider', () => {
         await flush();
 
         const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
-        const state = await syncConvexAuthForStartLoader({
-          convex: fresh,
-          getToken: async () => identityJwt('user_b', 'session_b'),
+        let state: unknown;
+        // Refusing trips the page, which quarantines the mounted provider.
+        await act(async () => {
+          state = await syncConvexAuthForStartLoader({
+            convex: fresh,
+            getToken: async () => identityJwt('user_b', 'session_b'),
+          });
         });
 
         expect(state).toEqual({ isAuthenticated: false, token: null });
