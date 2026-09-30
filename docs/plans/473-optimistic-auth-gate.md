@@ -812,6 +812,18 @@ Review fixes:
     `<Authenticated>` in `client.mdx` and the skill mirror are qualified for
     the optimistic window (server still enforces auth); the token gate and
     the sign-in refusal are documented in docs, JSDoc, mirror and changeset.
+  - Round 4 addendum (f9011f87), behavioural: the settlement wrapper is
+    installed only when a provider has `optimisticAuth`; without it the
+    Convex client is left untouched (no own property); installation is
+    idempotent and never double-wraps. Test `the settlement wrapper is
+    installed only with optimisticAuth, once`, red before on the props-off
+    assertion (`kitcn-1596-bodies/round5-red.log`). Supported-configuration
+    rule, documented in `client.mdx`, the skill mirrors and the
+    `optimisticAuth` JSDoc: every provider over one Convex client uses the
+    same `optimisticAuth` setting, since results reported before an
+    optimistic provider mounts are not seen. Gates: provider 76 pass,
+    auth-client + auth-mutations + context 100 pass, eslint and typecheck
+    exit 0, `bun lint:fix` no changes.
   - T4 fixed (the round 4 plan commit), document audit: plan constraints, scope and
     non-goals restated to HEAD with the first pass labelled historical;
     item 3 carved out of the TDD note; F4, R1 and R5 history labelled
@@ -982,6 +994,7 @@ Source-listed case matrix:
 | 32 | Waiting for auth fails at once on a trip | provider test (T1) | 5 s `AUTH_STATE_TIMEOUT` (red) | immediate `TOKEN_IDENTITY_CHANGED` | pass | done |
 | 33 | Sign-in-returned JWT for another identity refused, trips | provider test (T1) | published, success (red) | refused, tripped | pass | done |
 | 34 | Settlement recorded where Convex reports it; shared across providers; not by local session loss | provider tests (T2) | missed or wrongly set (red) | as stated | pass | done |
+| 35 | Props-off providers leave the Convex client untouched; the wrapper installs once with `optimisticAuth` | provider test (f9011f87) | own `setAuth` property (red) | prototype method; single wrap | pass | done |
 | 25 | Refusal memory pruned and bounded | superseded by S1: `TokenRefusals` and its tests deleted | N/A | N/A | N/A | superseded |
 | 26 | Optimistic window ends at the client's first auth result; no refusal count, post-confirmation refusal or remount reopens it | provider tests (S1) | reopened (red) | closed | pass | done |
 | 27 | Hard load: a fresh client with an SSR token still opens before confirmation | provider test (S1 control) | open | open | pass | done |
@@ -1028,9 +1041,9 @@ Task-style PR body contract:
 - Never include a line that links to the current PR itself.
 
 Final handoff / sync:
-- Commit: twenty-two local commits on `feat/optimistic-auth-gate` (four
+- Commit: twenty-four local commits on `feat/optimistic-auth-gate` (four
   before review, four in fix round 1, five in fix round 2, five in fix
-  round 3, four in fix round 4).
+  round 3, six in fix round 4 including its addendum).
 - PR: #473.
 - Issue: N/A.
 - Browser proof: N/A.

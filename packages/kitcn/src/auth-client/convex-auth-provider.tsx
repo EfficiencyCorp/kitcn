@@ -118,7 +118,10 @@ export type ConvexAuthProviderProps = {
    * sends them after Authenticate on the same socket and evaluates none of
    * them if the token is refused; a refused token sets `isAuthenticated` back
    * to false, which resets auth-bound queries. With the identity guard, only
-   * a token the guard admits opens it. Default `false`.
+   * a token the guard admits opens it. Every provider over one Convex client
+   * must use the same setting: mixing optimistic and non-optimistic providers
+   * over one client is unsupported, because results the client reports
+   * before an optimistic provider mounts are not seen. Default `false`.
    */
   optimisticAuth?: boolean;
   /**
