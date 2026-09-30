@@ -2002,6 +2002,7 @@ describe('ConvexAuthProvider', () => {
       convex = makeConvexClient(),
       extraHook = () => null,
       guard = true,
+      guardHolder,
       initialToken,
       onTokenIdentityAdmitted,
       onTokenIdentityChange = mock(() => {}),
@@ -2022,6 +2023,8 @@ describe('ConvexAuthProvider', () => {
       >;
       extraHook?: () => unknown;
       guard?: boolean;
+      /** Guardedness the test changes; rerender the harness after. */
+      guardHolder?: { current: boolean };
       initialToken?: string;
       onTokenIdentityAdmitted?: (token: string) => void;
       onTokenIdentityChange?: () => void;
@@ -2069,7 +2072,11 @@ describe('ConvexAuthProvider', () => {
           client={client as any}
           initialToken={initialToken}
           onTokenIdentityAdmitted={onTokenIdentityAdmitted}
-          onTokenIdentityChange={guard ? onTokenIdentityChange : undefined}
+          onTokenIdentityChange={
+            (guardHolder ? guardHolder.current : guard)
+              ? onTokenIdentityChange
+              : undefined
+          }
           optimisticAuth={optimisticAuth}
           tokenIdentityBaseline={
             baselineHolder ? baselineHolder.current : baseline
@@ -3770,6 +3777,145 @@ describe('ConvexAuthProvider', () => {
           if (saved === undefined) delete scope[key];
           else scope[key] = saved;
         }
+      });
+    });
+
+    describe('late guards, loader claims, publication between writes', () => {
+      type Published = {
+        auth: boolean;
+        token: string | null;
+        tripped: boolean;
+      };
+      const publicationProbe = (
+        onLoaded: (store: AuthStore) => void,
+        published: Published[]
+      ) =>
+        function usePublicationProbe() {
+          const store = useAuthStore();
+          useEffect(() => {
+            const offLoading = store.subscribe(
+              'isLoading',
+              (loading: boolean) => {
+                if (!loading) onLoaded(store);
+              }
+            );
+            const offAuth = store.subscribe(
+              'isAuthenticated',
+              (auth: boolean) => {
+                published.push({
+                  auth,
+                  token: store.get('token'),
+                  tripped: isDocumentTripped(),
+                });
+              }
+            );
+            return () => {
+              offLoading();
+              offAuth();
+            };
+          }, [store]);
+        };
+
+      test('a guard enabled after mount binds the identity the provider holds', async () => {
+        const guardHolder = { current: false };
+        const harness = convexHarness({
+          guardHolder,
+          initialToken: identityJwt('user_a', 'session_a'),
+          tokens: [identityJwt('user_b', 'session_b')],
+        });
+        await flush();
+
+        guardHolder.current = true;
+        harness.rerender();
+        await flush();
+
+        expect(await harness.fetch(true)).toBeNull();
+        expect(isDocumentTripped()).toBe(true);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.result.current.store.get('token')).toBeNull();
+      });
+
+      test("on a guarded page, the Start loader's first admitted JWT claims the page identity", async () => {
+        const convex = makeConvexClient();
+        const harness = convexHarness({ convex, session: 'pending' });
+        await flush();
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const tokenForB = identityJwt('user_b', 'session_b');
+
+        let first: unknown;
+        let second: unknown;
+        await act(async () => {
+          first = await syncConvexAuthForStartLoader({
+            convex: convex.client as any,
+            getToken: async () => tokenForA,
+          });
+          second = await syncConvexAuthForStartLoader({
+            convex: convex.client as any,
+            getToken: async () => tokenForB,
+          });
+        });
+
+        expect(first).toEqual({ isAuthenticated: true, token: tokenForA });
+        expect(second).toEqual({ isAuthenticated: false, token: null });
+        expect(isDocumentTripped()).toBe(true);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
+      test('a token swapped by a loading subscriber is admitted before authenticated is published', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const tokenForB = identityJwt('user_b', 'session_b');
+        const published: Published[] = [];
+        const harness = convexHarness({
+          extraHook: publicationProbe((store) => {
+            if (store.get('token') === tokenForA) store.set('token', tokenForB);
+          }, published),
+          tokens: [tokenForA],
+        });
+        await flush();
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        await harness.report(true);
+
+        expect(
+          published.some((entry) => entry.auth && entry.token === tokenForB)
+        ).toBe(false);
+        expect(isDocumentTripped()).toBe(true);
+      });
+
+      test('a trip in a loading subscriber is seen before authenticated is published', async () => {
+        const published: Published[] = [];
+        const harness = convexHarness({
+          extraHook: publicationProbe(() => tripDocument(), published),
+          tokens: [identityJwt('user_a', 'session_a')],
+        });
+        await flush();
+        await harness.fetch(false);
+        await harness.report(true);
+
+        expect(isDocumentTripped()).toBe(true);
+        expect(published.some((entry) => entry.auth && entry.tripped)).toBe(
+          false
+        );
+      });
+
+      test('the Start loader refuses when its setAuth trips the page', async () => {
+        const convexClient = {
+          clearAuth: mock(() => {}),
+          setAuth: mock(() => tripDocument()),
+        };
+        const serverHttpClient = {
+          clearAuth: mock(() => {}),
+          setAuth: mock((_token: string) => {}),
+        };
+        let state: unknown;
+        await act(async () => {
+          state = await syncConvexAuthForStartLoader({
+            convex: { convexClient, serverHttpClient },
+            getToken: async () => identityJwt('user_a', 'session_a'),
+          });
+        });
+
+        expect(state).toEqual({ isAuthenticated: false, token: null });
+        expect(serverHttpClient.setAuth).not.toHaveBeenCalled();
       });
     });
 

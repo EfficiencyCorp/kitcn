@@ -45,6 +45,7 @@ import {
   isDocumentTripped,
   isJwt,
   isTokenAdmissible,
+  joinPage,
   mountGuard,
   subscribeDocumentTrip,
   tripDocument,
@@ -149,9 +150,12 @@ export type ConvexAuthProviderProps = {
    * mutations fail with `AuthMutationError` code `TOKEN_IDENTITY_CHANGED`
    * until the reload. It governs the token kitcn supplies, not an
    * `Authorization` header the app sets itself. Same-session refreshes pass
-   * through. Off when not set: with no guarded provider on the page nothing
-   * changes, while a provider without it is still bound by the page identity
-   * when a guarded provider shares the page.
+   * through. Off when not set: a page that never enables it is unchanged.
+   * Once a guarded provider establishes the page identity, it persists until
+   * the reload, binding every provider (with or without this) and the Start
+   * loader, even after that provider unmounts. Two kitcn versions or
+   * revisions on one page (dev HMR across revisions included) are
+   * unsupported: they share no page identity until the reload.
    */
   onTokenIdentityChange?: () => void;
   /**
@@ -446,17 +450,19 @@ export function ConvexAuthProvider({
     const guarded = onTokenIdentityChange !== undefined;
     const getter = typeof tokenIdentityBaseline === 'function';
     // A fixed baseline is read on this first render only; a getter is read
-    // at every admission.
-    const fixed = guarded && !getter ? (tokenIdentityBaseline ?? null) : null;
+    // at every admission. Guardedness is read at every commit (below).
+    const fixed = getter ? null : (tokenIdentityBaseline ?? null);
     const created: IdentityGuard = {
-      baseline: () =>
-        guarded && getter
+      baseline: () => {
+        if (!created.guarded) return null;
+        return created.hasGetter
           ? resolveTokenIdentityBaseline(baselineRef.current)
-          : fixed,
+          : fixed;
+      },
       guarded,
       hasGetter: guarded && getter,
       heldToken: () => null,
-      identity: fixed,
+      identity: guarded ? fixed : null,
       onAdmitted: (token) => onAdmittedRef.current?.(token),
       tripped: isDocumentTripped(),
     };
@@ -475,6 +481,21 @@ export function ConvexAuthProvider({
       inheritedTrip: isDocumentTripped(),
       refusedInitialToken: refused,
     };
+  });
+
+  // Guardedness is read at every commit (after the inner provider has joined
+  // the page): a guard enabled after mount is seeded from its fixed baseline
+  // or the token it holds, then joins the page and reconciles held tokens.
+  useLayoutEffect(() => {
+    const guarded = onTokenIdentityChange !== undefined;
+    guard.hasGetter = guarded && typeof tokenIdentityBaseline === 'function';
+    if (guarded === guard.guarded) return;
+    guard.guarded = guarded;
+    if (!guarded) return;
+    guard.identity ??=
+      (guard.hasGetter ? null : guard.baseline()) ??
+      decodeTokenSubjectSessionIdentity(guard.heldToken());
+    joinPage(guard);
   });
 
   // Memoize decoded JWT to avoid re-parsing on every render

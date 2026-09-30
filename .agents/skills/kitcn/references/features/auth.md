@@ -431,8 +431,12 @@ admission (SSR, fresh and cached tokens, sign-in, HTTP, Start loader) binds a
 token to the page identity, the provider's own baseline and every mounted
 provider's current getter answer; an opaque session token is only exchanged,
 never handed to Convex. Held tokens are reconciled when a provider joins the
-page and at every admission. An unguarded provider is bound by the page
-identity when a guarded provider shares the page; with none, nothing changes.
+page and at every admission. A page that never enables the guard is
+unchanged; once a guarded provider establishes the page identity it persists
+until reload, binding every provider and the Start loader, even after that
+provider unmounts. Two kitcn versions or revisions on one page (dev HMR
+across revisions included) are unsupported: no shared page identity until
+reload.
 `onTokenIdentityAdmitted(token)` observes admitted JWTs so the app can update
 that shared baseline. All three identity options require
 `onTokenIdentityChange`.

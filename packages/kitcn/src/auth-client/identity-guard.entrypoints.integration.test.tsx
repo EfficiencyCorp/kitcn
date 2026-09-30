@@ -1,8 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { ConvexAuthProvider } from 'kitcn/auth/client';
 import { syncConvexAuthForStartLoader } from 'kitcn/auth/start';
-import { createCRPCContext, useAuth } from 'kitcn/react';
-import type { ReactNode } from 'react';
+import { createCRPCContext, useAuth, useAuthStore } from 'kitcn/react';
+import { type ReactNode, useEffect } from 'react';
 import {
   isDocumentTripped,
   resetDocumentTripForTests,
@@ -28,6 +28,7 @@ type FetchToken = (args: {
 const mountProvider = ({
   baseline,
   client,
+  extraHook = () => null,
   guard = true,
   initialToken,
   optimisticAuth = false,
@@ -36,6 +37,7 @@ const mountProvider = ({
 }: {
   baseline?: string | (() => string | null);
   client: { setAuth: (fetchToken: FetchToken) => void };
+  extraHook?: () => unknown;
   guard?: boolean;
   initialToken?: string;
   optimisticAuth?: boolean;
@@ -75,19 +77,31 @@ const mountProvider = ({
   return {
     exchange,
     onTokenIdentityChange,
-    ...renderHook(() => useAuth(), { wrapper }),
+    ...renderHook(
+      () => {
+        extraHook();
+        return useAuth();
+      },
+      { wrapper }
+    ),
   };
 };
 
 const makeClient = () => {
   const fetchers: FetchToken[] = [];
+  const reports: Array<(isAuthenticated: boolean) => void> = [];
   return {
     fetchers,
+    reports,
     client: {
       clearAuth: () => {},
       close: mock(async () => {}),
-      setAuth: (fetchToken: FetchToken) => {
+      setAuth: (
+        fetchToken: FetchToken,
+        onChange?: (isAuthenticated: boolean) => void
+      ) => {
         fetchers.push(fetchToken);
+        if (onChange) reports.push(onChange);
       },
     },
   };
@@ -336,5 +350,70 @@ describe('identity guard across built entrypoints', () => {
     });
     expect(handed).toBe(tokenForA);
     expect(guarded.exchange).toHaveBeenCalledTimes(1);
+  });
+
+  test("kitcn/auth/start's first JWT claims the identity of a page kitcn/auth/client guards", async () => {
+    const { client } = makeClient();
+    const provider = mountProvider({ client, session: 'pending' });
+    await flush();
+    const tokenForA = identityJwt('user_a', 'session_a');
+    let first: unknown;
+    let second: unknown;
+    await act(async () => {
+      first = await syncConvexAuthForStartLoader({
+        convex: client,
+        getToken: async () => tokenForA,
+      });
+      second = await syncConvexAuthForStartLoader({
+        convex: client,
+        getToken: async () => identityJwt('user_b', 'session_b'),
+      });
+    });
+
+    expect(first).toEqual({ isAuthenticated: true, token: tokenForA });
+    expect(second).toEqual({ isAuthenticated: false, token: null });
+    expect(isDocumentTripped()).toBe(true);
+    expect(provider.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+  });
+
+  test('kitcn/auth/client admits the held token again right before publishing authenticated', async () => {
+    const tokenForA = identityJwt('user_a', 'session_a');
+    const tokenForB = identityJwt('user_b', 'session_b');
+    const published: Array<{ auth: boolean; token: string | null }> = [];
+    const useSwapWhenLoaded = () => {
+      const store = useAuthStore();
+      useEffect(() => {
+        const offLoading = store.subscribe('isLoading', (loading: boolean) => {
+          if (!loading && store.get('token') === tokenForA) {
+            store.set('token', tokenForB);
+          }
+        });
+        const offAuth = store.subscribe('isAuthenticated', (auth: boolean) => {
+          published.push({ auth, token: store.get('token') });
+        });
+        return () => {
+          offLoading();
+          offAuth();
+        };
+      }, [store]);
+    };
+    const { client, fetchers, reports } = makeClient();
+    mountProvider({
+      client,
+      extraHook: useSwapWhenLoaded,
+      tokens: [tokenForA],
+    });
+    await flush();
+    await act(async () => {
+      await fetchers.at(-1)!({ forceRefreshToken: false });
+    });
+    await act(async () => {
+      reports.at(-1)!(true);
+    });
+
+    expect(
+      published.some((entry) => entry.auth && entry.token === tokenForB)
+    ).toBe(false);
+    expect(isDocumentTripped()).toBe(true);
   });
 });

@@ -1,5 +1,8 @@
 import { settleClient } from '../auth-client/client-settlement';
-import { admitToken } from '../react/identity-guard-registry';
+import {
+  admitToken,
+  isDocumentTripped,
+} from '../react/identity-guard-registry';
 
 export type MaybePromise<T> = Promise<T> | T;
 
@@ -74,6 +77,13 @@ export const syncConvexAuthForStartLoader = async ({
   // window opens over this client. Checked again at every hand-out.
   settleClient(authClient);
   authClient.setAuth(async () => (admit(token) ? token : null));
+  // `setAuth` may run code that trips the page before it returns.
+  if (isDocumentTripped()) {
+    startLoaderAuthTokens.set(convex, null);
+    authClient.clearAuth();
+    serverHttpClient?.clearAuth?.();
+    return { isAuthenticated: false, token: null };
+  }
   serverHttpClient?.setAuth(token);
   return { isAuthenticated: true, token };
 };

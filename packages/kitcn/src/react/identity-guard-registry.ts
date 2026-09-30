@@ -13,7 +13,10 @@
 
 /** One `ConvexAuthProvider`, as the admission sees it. */
 export type IdentityGuard = {
-  /** `onTokenIdentityChange` is set: the provider binds an identity. */
+  /**
+   * `onTokenIdentityChange` is set: the provider binds an identity. Read at
+   * every commit, so a guard enabled after mount joins the page then.
+   */
   guarded: boolean;
   /** `tokenIdentityBaseline`'s current answer (a getter is read each time). */
   baseline: () => string | null;
@@ -64,7 +67,11 @@ type PageRegistry = {
 
 // Bump the key on any change to the registry's shape: copies of kitcn from
 // different revisions in one page (dev HMR, mixed bundles) must never share
-// an object they read differently.
+// an object they read differently. Two kitcn versions or revisions on one page
+// are unsupported: entries under different keys, or next to an incompatible
+// object under this key, share no page identity until the page reloads; the
+// entry that detects an incompatible object fails its guarded admissions
+// closed.
 const REGISTRY_KEY = Symbol.for('kitcn.identityGuard.v2');
 
 const createRegistry = (): PageRegistry => ({
@@ -170,6 +177,19 @@ export const mountGuard = (guard: IdentityGuard) => {
   const registry = pageRegistry();
   if (!registry) return () => {};
   registry.guards.add(guard);
+  joinPage(guard);
+  return () => {
+    registry.guards.delete(guard);
+  };
+};
+
+/**
+ * A mounted provider's guard joins the page: at its first commit, or at the
+ * commit that enables it.
+ */
+export const joinPage = (guard: IdentityGuard) => {
+  const registry = pageRegistry();
+  if (!registry) return;
   if (guard.guarded && guard.identity) {
     registry.documentIdentity ??= guard.identity;
   }
@@ -180,10 +200,10 @@ export const mountGuard = (guard: IdentityGuard) => {
       break;
     }
   }
-  return () => {
-    registry.guards.delete(guard);
-  };
 };
+
+const guardedProviderMounted = () =>
+  [...(pageRegistry()?.guards ?? [])].some((mounted) => mounted.guarded);
 
 /**
  * Every identity a token must match at this moment: the page's, every
@@ -208,7 +228,7 @@ const boundIdentities = (guard: IdentityGuard | undefined) => {
 export const identityGuardInPlay = (guard: IdentityGuard | undefined) =>
   !!guard?.guarded ||
   boundIdentities(guard).length > 0 ||
-  [...(pageRegistry()?.guards ?? [])].some((mounted) => mounted.guarded);
+  guardedProviderMounted();
 
 /** Whether `token` would be admitted now. No trip, no record, no callback. */
 export const isTokenAdmissible = (
@@ -252,15 +272,17 @@ export const admitToken = (
     }
     return false;
   }
-  if (guard?.guarded && isJwt(token)) {
-    const identity = decodeTokenSubjectSessionIdentity(token);
-    if (identity !== null) {
-      guard.identity = identity;
-      const registry = pageRegistry();
-      if (registry) registry.documentIdentity ??= identity;
-    }
-    if (announce) guard.onAdmitted(token);
+  // The first identity admitted on a guarded page claims it, whoever admits
+  // it (a guarded provider, or the Start loader over a guarded page).
+  const identity = isJwt(token)
+    ? decodeTokenSubjectSessionIdentity(token)
+    : null;
+  if (identity !== null && (guard?.guarded || guardedProviderMounted())) {
+    if (guard?.guarded) guard.identity = identity;
+    const registry = pageRegistry();
+    if (registry) registry.documentIdentity ??= identity;
   }
+  if (announce && guard?.guarded && isJwt(token)) guard.onAdmitted(token);
   return !isDocumentTripped() && !guard?.tripped;
 };
 

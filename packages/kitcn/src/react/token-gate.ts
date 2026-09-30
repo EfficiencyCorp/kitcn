@@ -57,12 +57,25 @@ export const publishAuthenticated = (authStore: AuthStore) => {
   return true;
 };
 
-/** Publishes the auth gate's state; never authenticated after a trip. */
+/**
+ * Publishes the auth gate's state; never authenticated after a trip. The
+ * loading write runs subscribers synchronously, so the held token is admitted
+ * again, and the trip read again, right before an authenticated write.
+ */
 export const publishAuthState = (
   authStore: AuthStore,
   state: { isAuthenticated: boolean; isLoading: boolean }
 ) => {
   const tripped = isDocumentTripped();
   authStore.set('isLoading', tripped ? false : state.isLoading);
-  authStore.set('isAuthenticated', tripped ? false : state.isAuthenticated);
+  if (!state.isAuthenticated || tripped) {
+    authStore.set('isAuthenticated', false);
+    return;
+  }
+  const token = authStore.get('token');
+  authStore.set(
+    'isAuthenticated',
+    !isDocumentTripped() &&
+      !(token && !admitStoreToken(authStore, token, { use: 'hold' }))
+  );
 };
