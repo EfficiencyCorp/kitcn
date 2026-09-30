@@ -11,7 +11,10 @@ import {
   useConvexAuthRecovery,
   useFetchAccessToken,
 } from '../react/auth-store';
-import { resetDocumentTripForTests } from '../react/identity-guard-trip';
+import {
+  resetDocumentTripForTests,
+  tripDocument,
+} from '../react/identity-guard-trip';
 import { ConvexAuthProvider } from './convex-auth-provider';
 
 const makeJwt = (expSecondsFromNow: number) => {
@@ -1972,6 +1975,8 @@ describe('ConvexAuthProvider', () => {
       optimisticAuth = false,
       persistedSessionAnswer = { data: null, error: null },
       session = 'active',
+      sessionRef = { current: session },
+      tokenEndpoint,
       tokens = [],
     }: {
       authClientExtras?: Record<string, unknown>;
@@ -1988,26 +1993,34 @@ describe('ConvexAuthProvider', () => {
       optimisticAuth?: boolean;
       persistedSessionAnswer?: unknown;
       session?: 'active' | 'none' | 'pending';
+      /** Mutable session state; rerender the harness after changing it. */
+      sessionRef?: { current: 'active' | 'none' | 'pending' };
+      /** Replaces the `tokens` queue, e.g. to hold a request in flight. */
+      tokenEndpoint?: () => Promise<{ data: { token: string | null } }>;
       tokens?: Array<string | null>;
     }) => {
       const { bindings, client, close } = convex;
       const queue = [...tokens];
-      const convexToken = mock(async () => ({
-        data: { token: queue.shift() ?? null },
-      }));
+      const convexToken = mock(
+        tokenEndpoint ??
+          (async () => ({
+            data: { token: queue.shift() ?? null },
+          }))
+      );
       const getSession = mock(async () => null);
       const $fetch = mock(
         async (..._args: unknown[]) => persistedSessionAnswer
       );
-      const sessionResult =
-        session === 'active'
-          ? {
-              data: { session: { id: 'session' }, user: { id: 'user' } },
-              isPending: false,
-            }
-          : { data: null, isPending: session === 'pending' };
+      const sessionResults = {
+        active: {
+          data: { session: { id: 'session' }, user: { id: 'user' } },
+          isPending: false,
+        },
+        none: { data: null, isPending: false },
+        pending: { data: null, isPending: true },
+      };
       const authClient = {
-        useSession: () => sessionResult,
+        useSession: () => sessionResults[sessionRef.current],
         convex: { token: convexToken },
         getSession,
         $fetch,
@@ -2048,6 +2061,7 @@ describe('ConvexAuthProvider', () => {
         convexToken,
         getSession,
         onTokenIdentityChange,
+        rerender: () => view.rerender(),
         result: view.result,
         unmount: view.unmount,
         fetch: async (forceRefreshToken: boolean) => {
@@ -2336,6 +2350,186 @@ describe('ConvexAuthProvider', () => {
       expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
       expect(harness.result.current.store.get('token')).toBeNull();
       expect(harness.result.current.store.get('isAuthenticated')).toBe(false);
+    });
+
+    const deferred = <T,>() => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+
+    test('an in-flight fetch in an unguarded provider hands out nothing after a trip', async () => {
+      const response = deferred<{ data: { token: string | null } }>();
+      const unguarded = convexHarness({
+        guard: false,
+        tokenEndpoint: () => response.promise,
+      });
+      const guarded = convexHarness({
+        initialToken: identityJwt('user_a', 'session_a'),
+        tokens: [identityJwt('user_b', 'session_b')],
+      });
+      await flush();
+      let pending!: Promise<string | null>;
+      act(() => {
+        pending = unguarded.bindings.at(-1)!.fetchToken({
+          forceRefreshToken: true,
+        });
+      });
+      await guarded.fetch(false);
+      expect(await guarded.fetch(true)).toBeNull();
+
+      let handedOut: string | null = 'unset';
+      await act(async () => {
+        response.resolve({ data: { token: makeJwt(3600) } });
+        handedOut = await pending;
+      });
+      expect(handedOut).toBeNull();
+      expect(unguarded.result.current.store.get('token')).toBeNull();
+    });
+
+    const signInCases = [
+      ['sign-in', 'email'],
+      ['social sign-in', 'social'],
+      ['sign-up', 'signUp'],
+    ] as const;
+
+    test('a trip during a sign-in, sign-up or social sign-in fails it before anything is published', async () => {
+      for (const [, method] of signInCases) {
+        resetDocumentTripForTests();
+        const tokenForA = identityJwt('user_a', 'session_a', 7200);
+        const session = deferred<unknown>();
+        const authClientExtras = {
+          getSession: () => session.promise,
+          signIn: {
+            email: async () => ({ data: { token: tokenForA } }),
+            social: async () => ({ data: { token: tokenForA } }),
+          },
+          signUp: { email: async () => ({ data: { token: tokenForA } }) },
+        };
+        const mutations = createAuthMutations(authClientExtras as any);
+        const useSignInHooks = () => ({
+          email: mutations.useSignInMutationOptions(),
+          signUp: mutations.useSignUpMutationOptions(),
+          social: mutations.useSignInSocialMutationOptions(),
+        });
+        const harness = convexHarness({
+          authClientExtras,
+          extraHook: useSignInHooks,
+          initialToken: identityJwt('user_a', 'session_a'),
+        });
+        await flush();
+        const store = harness.result.current.store;
+        const published: unknown[] = [];
+        const unsubscribe = store.subscribe(
+          'isAuthenticated',
+          (value: boolean) => published.push(value)
+        );
+        const hooks = harness.result.current.extra as Record<
+          string,
+          { mutationFn: (args: unknown) => Promise<unknown> }
+        >;
+        let outcome!: Promise<unknown>;
+        act(() => {
+          outcome = hooks[method]!.mutationFn({}).then(
+            () => null,
+            (error: unknown) => error
+          );
+        });
+        let failure: unknown;
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0));
+          tripDocument();
+          session.resolve({ data: null });
+          failure = await outcome;
+        });
+        unsubscribe();
+
+        expect((failure as AuthMutationError)?.code).toBe(
+          'TOKEN_IDENTITY_CHANGED'
+        );
+        expect(published).not.toContain(true);
+        harness.unmount();
+      }
+    });
+
+    test('waiting for auth after a sign-in fails at once when the document trips', async () => {
+      const authClientExtras = {
+        signIn: { email: async () => ({ data: {} }) },
+      };
+      const mutations = createAuthMutations(authClientExtras as any);
+      const harness = convexHarness({
+        authClientExtras,
+        extraHook: () => mutations.useSignInMutationOptions(),
+      });
+      await flush();
+      const options = harness.result.current.extra as {
+        mutationFn: (args: unknown) => Promise<unknown>;
+      };
+      const started = Date.now();
+      let outcome!: Promise<unknown>;
+      act(() => {
+        outcome = options.mutationFn({}).then(
+          () => null,
+          (error: unknown) => error
+        );
+      });
+      let failure: unknown;
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+        tripDocument();
+        failure = await outcome;
+      });
+
+      expect((failure as AuthMutationError)?.code).toBe(
+        'TOKEN_IDENTITY_CHANGED'
+      );
+      expect(Date.now() - started).toBeLessThan(2000);
+    }, 10_000);
+
+    test('a JWT a sign-in returns for another identity is refused and trips the document', async () => {
+      const tokenForB = identityJwt('user_b', 'session_b', 7200);
+      const authClientExtras = {
+        signIn: { email: async () => ({ data: { token: tokenForB } }) },
+      };
+      const mutations = createAuthMutations(authClientExtras as any);
+      const harness = convexHarness({
+        authClientExtras,
+        extraHook: () => mutations.useSignInMutationOptions(),
+        initialToken: identityJwt('user_a', 'session_a'),
+      });
+      await flush();
+      const store = harness.result.current.store;
+      const published: unknown[] = [];
+      const unsubscribeToken = store.subscribe(
+        'token',
+        (value: string | null) => published.push(value)
+      );
+      const unsubscribeAuth = store.subscribe(
+        'isAuthenticated',
+        (value: boolean) => published.push(value)
+      );
+      const options = harness.result.current.extra as {
+        mutationFn: (args: unknown) => Promise<unknown>;
+      };
+      let failure: unknown;
+      await act(async () => {
+        failure = await options.mutationFn({}).then(
+          () => null,
+          (error: unknown) => error
+        );
+      });
+      unsubscribeToken();
+      unsubscribeAuth();
+
+      expect((failure as AuthMutationError)?.code).toBe(
+        'TOKEN_IDENTITY_CHANGED'
+      );
+      expect(published).not.toContain(tokenForB);
+      expect(published).not.toContain(true);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(store.get('token')).toBeNull();
     });
 
     test('a throwing onTokenIdentityChange still closes the client', async () => {
@@ -2633,7 +2827,7 @@ describe('ConvexAuthProvider', () => {
       expect(second.result.current.store.get('isAuthenticated')).toBe(false);
     });
 
-    test("refusals hidden behind the SDK's transparent retry are all remembered", async () => {
+    test("a refusal hidden behind the SDK's transparent retry never reopens the gate", async () => {
       const tokenA = makeJwt(3600);
       // Under a minute left: the recovery fetch goes back to the endpoint.
       const tokenB = makeJwt(30);
