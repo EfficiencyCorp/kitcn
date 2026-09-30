@@ -9,7 +9,10 @@ import {
   useMeta,
 } from './context';
 import * as httpProxyModule from './http-proxy';
-import { resetDocumentTripForTests, tripDocument } from './identity-guard-trip';
+import {
+  resetDocumentTripForTests,
+  tripDocument,
+} from './identity-guard-registry';
 import * as proxyModule from './proxy';
 import * as vanillaClientModule from './vanilla-client';
 

@@ -512,7 +512,8 @@ token source. What the guard guarantees:
 
 1. A JWT of another user or session (whatever its `exp`) is never cached,
    published, or handed to Convex, cRPC HTTP or the TanStack Start loader.
-   Once an identity is established, a JWT without one is refused too.
+   Once an identity is established, a JWT without one is refused too, and an
+   opaque session token is only exchanged for a JWT, never handed to Convex.
 2. When a trip happens (any provider or the Start loader refuses such a
    token), every mounted provider hands out no token and publishes
    `isAuthenticated: false`; each one with `onTokenIdentityChange` closes its
@@ -524,9 +525,13 @@ The guard covers the token kitcn supplies, not an `Authorization` header the
 app sets in `httpOptions.headers`.
 
 For multiple provider mounts in one document, pass the shared identity as
-`tokenIdentityBaseline`. Its format is `sub|sessionId`. A getter is evaluated
-for each admission, including cached tokens. Use `onTokenIdentityAdmitted` to
-observe admitted tokens and update the shared document identity.
+`tokenIdentityBaseline`. Its format is `sub|sessionId`. Every admission (the
+SSR token, fresh and cached tokens, sign-in tokens, HTTP headers and the Start
+loader) holds a token to the page identity (the first one a provider knew),
+the provider's own baseline, and the current answer of every mounted
+provider's getter. A provider that mounts with an SSR token of another
+identity trips the page. Use `onTokenIdentityAdmitted` to observe admitted
+tokens and update the shared document identity.
 
 ## Auth Flow
 

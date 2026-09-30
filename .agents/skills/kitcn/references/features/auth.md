@@ -426,8 +426,11 @@ providers start tripped; sign-in mutations fail with
 `TOKEN_IDENTITY_CHANGED`.
 
 For multiple provider mounts, pass `tokenIdentityBaseline` as
-`sub|sessionId`, or a getter returning the document's current identity. The
-getter is checked for every admission, cached tokens included.
+`sub|sessionId`, or a getter returning the document's current identity. Every
+admission (SSR, fresh and cached tokens, sign-in, HTTP, Start loader) binds a
+token to the page identity, the provider's own baseline and every mounted
+provider's current getter answer; an opaque session token is only exchanged,
+never handed to Convex.
 `onTokenIdentityAdmitted(token)` observes admitted JWTs so the app can update
 that shared baseline. All three identity options require
 `onTokenIdentityChange`.

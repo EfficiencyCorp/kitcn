@@ -11,7 +11,10 @@
 - Keep a token of another user or session out of the store, Convex, cRPC
   HTTP headers and the TanStack Start loader on every path (SSR token,
   restored session, sign-in token, JWTs without `exp`, concurrent first
-  tokens), with identity state shared across kitcn's entrypoints.
+  tokens): one admission binds every token to the page identity and every
+  mounted provider's current `tokenIdentityBaseline` getter, an opaque
+  session token is only exchanged, and the page state is shared across
+  kitcn's entrypoints in the browser and never kept on the server.
 - Make an identity guard trip page-wide: mounted providers hand out no token
   and publish unauthenticated, each guarded one closes its client and calls
   `onTokenIdentityChange` once, and sign-in mutations fail with

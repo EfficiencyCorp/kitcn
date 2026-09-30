@@ -19,7 +19,7 @@ import {
   useAuthStore,
 } from './auth-store';
 import { useConvexQueryClient } from './context';
-import { isDocumentTripped } from './identity-guard-trip';
+import { isDocumentTripped } from './identity-guard-registry';
 import { publishAuthenticated, publishToken } from './token-gate';
 
 export { AuthMutationError, isAuthMutationError } from '../crpc/auth-error';

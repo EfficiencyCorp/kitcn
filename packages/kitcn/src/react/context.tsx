@@ -35,7 +35,7 @@ import {
   type VanillaHttpCRPCClientFromRouter,
 } from './http-proxy';
 import { createCRPCOptionsProxy } from './proxy';
-import { admitToken } from './token-gate';
+import { admitStoreToken } from './token-gate';
 import { createVanillaCRPCProxy } from './vanilla-client';
 
 // ============================================================================
@@ -253,7 +253,7 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
             // The app's headers may have taken a while: the token gate
             // decides again right before the token is attached.
             return guardedToken &&
-              admitToken(authStore, guardedToken, { announce: false })
+              admitStoreToken(authStore, guardedToken, { use: 'handout' })
               ? { ...userHeaders, Authorization: `Bearer ${guardedToken}` }
               : { ...userHeaders };
           }
@@ -267,7 +267,12 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
           const now = Date.now();
           const timeRemaining = expiresAt ? expiresAt - now : 0;
 
-          if (token && expiresAt && timeRemaining >= 60_000) {
+          if (
+            token &&
+            expiresAt &&
+            timeRemaining >= 60_000 &&
+            admitStoreToken(authStore, token, { use: 'handout' })
+          ) {
             const userHeaders =
               typeof httpOptions.headers === 'function'
                 ? await httpOptions.headers()

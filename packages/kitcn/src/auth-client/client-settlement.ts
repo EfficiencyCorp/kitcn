@@ -1,5 +1,5 @@
 import type { ConvexReactClient } from 'convex/react';
-import { identityGuardRegistry } from '../react/identity-guard-registry';
+import { pageRegistry } from '../react/identity-guard-registry';
 
 // A Convex client's optimistic window ends at its first auth result: the
 // value Convex reports through the `onChange` it is given in `setAuth`. It is
@@ -8,13 +8,14 @@ import { identityGuardRegistry } from '../react/identity-guard-registry';
 // session change (which reports nothing) does not.
 // The wrapper is installed by the first provider with `optimisticAuth` over a
 // client; results reported before that are not seen. The state lives in the
-// registry shared by every built entry (the Start loader settles clients too).
+// page registry shared by every built entry (the Start loader settles clients
+// too); on the server nothing is recorded.
 
 /** Wraps the client's `setAuth` once, so every `onChange` records settlement. */
 export function watchClientSettlement(client: ConvexReactClient) {
-  const { watchedClients } = identityGuardRegistry();
-  if (watchedClients.has(client)) return;
-  watchedClients.add(client);
+  const registry = pageRegistry();
+  if (!registry || registry.watchedClients.has(client)) return;
+  registry.watchedClients.add(client);
   const setAuth = client.setAuth.bind(client);
   client.setAuth = (fetchToken, onChange, onRefreshChange) =>
     setAuth(
@@ -32,26 +33,29 @@ export function watchClientSettlement(client: ConvexReactClient) {
  * The Start loader calls it when it sets auth before any provider renders.
  */
 export function settleClient(client: object) {
-  const { settledClients, settlementListeners } = identityGuardRegistry();
-  if (settledClients.has(client)) return;
-  settledClients.add(client);
-  for (const listener of [...(settlementListeners.get(client) ?? [])]) {
+  const registry = pageRegistry();
+  if (!registry || registry.settledClients.has(client)) return;
+  registry.settledClients.add(client);
+  for (const listener of [
+    ...(registry.settlementListeners.get(client) ?? []),
+  ]) {
     listener();
   }
 }
 
 export const isClientSettled = (client: object) =>
-  identityGuardRegistry().settledClients.has(client);
+  pageRegistry()?.settledClients.has(client) ?? false;
 
 export const subscribeClientSettlement = (
   client: object,
   listener: () => void
 ) => {
-  const { settlementListeners } = identityGuardRegistry();
-  let clientListeners = settlementListeners.get(client);
+  const registry = pageRegistry();
+  if (!registry) return () => {};
+  let clientListeners = registry.settlementListeners.get(client);
   if (!clientListeners) {
     clientListeners = new Set();
-    settlementListeners.set(client, clientListeners);
+    registry.settlementListeners.set(client, clientListeners);
   }
   clientListeners.add(listener);
   return () => {

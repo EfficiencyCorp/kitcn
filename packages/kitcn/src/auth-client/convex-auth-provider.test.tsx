@@ -1,5 +1,7 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode, Suspense, useEffect } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { syncConvexAuthForStartLoader } from '../auth-start';
 import { AuthMutationError } from '../crpc/auth-error';
 import { createAuthMutations } from '../react/auth-mutations';
@@ -17,7 +19,8 @@ import {
   isDocumentTripped,
   resetDocumentTripForTests,
   tripDocument,
-} from '../react/identity-guard-trip';
+} from '../react/identity-guard-registry';
+import { isClientSettled } from './client-settlement';
 import { ConvexAuthProvider } from './convex-auth-provider';
 
 const makeJwt = (expSecondsFromNow: number) => {
@@ -2154,7 +2157,7 @@ describe('ConvexAuthProvider', () => {
       expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(0);
     });
 
-    test('a token seeded into the store opens the optimistic gate only if the guard would admit it', async () => {
+    test('a token seeded into the store opens the optimistic gate only if the guard admits it', async () => {
       const harness = convexHarness({
         baseline: 'user_a|session_a',
         optimisticAuth: true,
@@ -2165,18 +2168,22 @@ describe('ConvexAuthProvider', () => {
       await act(async () => {
         harness.result.current.store.set(
           'token',
-          identityJwt('user_b', 'session_b')
-        );
-      });
-      expect(harness.result.current.auth.isAuthenticated).toBe(false);
-
-      await act(async () => {
-        harness.result.current.store.set(
-          'token',
           identityJwt('user_a', 'session_a')
         );
       });
       expect(harness.result.current.auth.isAuthenticated).toBe(true);
+
+      // The gate admits through the one admission: another identity is
+      // refused there and trips the page.
+      await act(async () => {
+        harness.result.current.store.set(
+          'token',
+          identityJwt('user_b', 'session_b')
+        );
+      });
+      expect(harness.result.current.auth.isAuthenticated).toBe(false);
+      expect(isDocumentTripped()).toBe(true);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
     });
 
     test('an opaque persisted session token is not restored while an identity is established', async () => {
@@ -3432,6 +3439,207 @@ describe('ConvexAuthProvider', () => {
         expect(harness.result.current.auth.isAuthenticated).toBe(false);
         harness.unmount();
       }
+    });
+
+    describe('one admission for every path', () => {
+      const sessionPending = {
+        useSession: () => ({ data: null, isPending: true }),
+        convex: { token: async () => ({ data: {} }) },
+        getSession: async () => null,
+        updateSession: () => {},
+        crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      };
+
+      test('a later SSR token must match both its baseline and the page identity', async () => {
+        const first = convexHarness({ baseline: 'user_a|session_a' });
+        await flush();
+
+        const second = convexHarness({
+          baseline: 'user_b|session_b',
+          initialToken: identityJwt('user_b', 'session_b'),
+        });
+        await flush();
+
+        expect(second.result.current.store.get('token')).toBeNull();
+        expect(isDocumentTripped()).toBe(true);
+        expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
+      test('providers mounted together with SSR tokens of two identities trip the page', async () => {
+        for (const baselines of [false, true]) {
+          const stores = new Map<'a' | 'b', AuthStore>();
+          const Probe = ({ name }: { name: 'a' | 'b' }) => {
+            const store = useAuthStore();
+            useEffect(() => {
+              stores.set(name, store);
+            }, [name, store]);
+            return null;
+          };
+          const changes = { a: mock(() => {}), b: mock(() => {}) };
+          const provider = (name: 'a' | 'b') => (
+            <ConvexAuthProvider
+              authClient={sessionPending as any}
+              client={makeConvexClient().client as any}
+              initialToken={identityJwt(`user_${name}`, `session_${name}`)}
+              onTokenIdentityChange={changes[name]}
+              tokenIdentityBaseline={
+                baselines ? `user_${name}|session_${name}` : undefined
+              }
+            >
+              <Probe name={name} />
+            </ConvexAuthProvider>
+          );
+          const view = render(
+            <>
+              {provider('a')}
+              {provider('b')}
+            </>
+          );
+          await flush();
+
+          expect(isDocumentTripped()).toBe(true);
+          expect(stores.get('a')!.get('token')).toBeNull();
+          expect(stores.get('b')!.get('token')).toBeNull();
+          expect(changes.a).toHaveBeenCalledTimes(1);
+          expect(changes.b).toHaveBeenCalledTimes(1);
+          view.unmount();
+          resetDocumentTripForTests();
+        }
+      });
+
+      test('a trip inside onTokenIdentityAdmitted at a cached hand-out hands out nothing', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const tokenForB = identityJwt('user_b', 'session_b');
+        const container = document.createElement('div');
+        const root = createRoot(container);
+        let mountRefusing = false;
+        const harness = convexHarness({
+          onTokenIdentityAdmitted: () => {
+            if (!mountRefusing) return;
+            mountRefusing = false;
+            // A provider mounted synchronously from the callback refuses B
+            // against the page identity A and trips the page.
+            flushSync(() => {
+              root.render(
+                <ConvexAuthProvider
+                  authClient={sessionPending as any}
+                  client={makeConvexClient().client as any}
+                  initialToken={tokenForB}
+                  onTokenIdentityChange={() => {}}
+                >
+                  {null}
+                </ConvexAuthProvider>
+              );
+            });
+          },
+          tokens: [tokenForA],
+        });
+        await flush();
+        expect(await harness.fetch(false)).toBe(tokenForA);
+
+        mountRefusing = true;
+        expect(await harness.fetch(false)).toBeNull();
+        expect(isDocumentTripped()).toBe(true);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        act(() => root.unmount());
+      });
+
+      test("a sibling without a getter is bound by another guard's current getter", async () => {
+        const page = { identity: 'user_a|session_a' };
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const first = convexHarness({
+          baseline: () => page.identity,
+          tokens: [tokenForA],
+        });
+        const second = convexHarness({ tokens: [tokenForA, tokenForA] });
+        await flush();
+        expect(await first.fetch(false)).toBe(tokenForA);
+        expect(await second.fetch(false)).toBe(tokenForA);
+
+        page.identity = 'user_b|session_b';
+
+        expect(await second.fetch(false)).toBeNull();
+        expect(isDocumentTripped()).toBe(true);
+        expect(second.result.current.store.get('token')).toBeNull();
+        expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
+      test('a cached two-segment opaque credential goes to the exchange, never to Convex', async () => {
+        const payload = btoa(
+          JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })
+        );
+        const opaque = `opaque.${payload}`;
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const harness = convexHarness({
+          baseline: 'user_a|session_a',
+          initialToken: opaque,
+          session: 'pending',
+          tokens: [tokenForA],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        expect(harness.convexToken).toHaveBeenCalledTimes(1);
+        expect(
+          (harness.convexToken.mock.calls[0] as any)[0].fetchOptions.headers
+        ).toEqual({ Authorization: `Bearer ${opaque}` });
+      });
+
+      describe('on the server', () => {
+        const registryKey = Symbol.for('kitcn.identityGuard.v1');
+        const scope = globalThis as unknown as Record<symbol, unknown>;
+        const withoutWindow = async (run: () => Promise<void>) => {
+          const saved = Object.getOwnPropertyDescriptor(globalThis, 'window')!;
+          Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: undefined,
+            writable: true,
+          });
+          try {
+            await run();
+          } finally {
+            Object.defineProperty(globalThis, 'window', saved);
+          }
+        };
+
+        test('a server-only loader creates, reads and writes no page state', async () => {
+          delete scope[registryKey];
+          const tokenForB = identityJwt('user_b', 'session_b');
+          await withoutWindow(async () => {
+            const client = {
+              clearAuth: mock(() => {}),
+              setAuth: mock(() => {}),
+            };
+            const state = await syncConvexAuthForStartLoader({
+              convex: client,
+              getToken: async () => tokenForB,
+            });
+            expect(state).toEqual({ isAuthenticated: true, token: tokenForB });
+            expect(scope[registryKey]).toBeUndefined();
+          });
+        });
+
+        test('page state left by a torn-down DOM does not reach a server call', async () => {
+          const view = convexHarness({ baseline: 'user_a|session_a' });
+          await flush();
+          view.unmount();
+          const tokenForB = identityJwt('user_b', 'session_b');
+          const client = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+
+          await withoutWindow(async () => {
+            const state = await syncConvexAuthForStartLoader({
+              convex: client,
+              getToken: async () => tokenForB,
+            });
+            expect(state).toEqual({ isAuthenticated: true, token: tokenForB });
+          });
+
+          expect(isClientSettled(client)).toBe(false);
+          expect(isDocumentTripped()).toBe(false);
+        });
+      });
     });
 
     test('a remount with a fresh client cannot reopen the document after a trip', async () => {

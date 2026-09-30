@@ -3,7 +3,10 @@ import { ConvexAuthProvider } from 'kitcn/auth/client';
 import { syncConvexAuthForStartLoader } from 'kitcn/auth/start';
 import { useAuth } from 'kitcn/react';
 import type { ReactNode } from 'react';
-import { resetDocumentTripForTests } from '../react/identity-guard-trip';
+import {
+  isDocumentTripped,
+  resetDocumentTripForTests,
+} from '../react/identity-guard-registry';
 
 // Built entries: `kitcn/auth/start` is bundled apart from `kitcn/auth/client`
 // and `kitcn/react`, so the identity guard's page state must be shared
@@ -29,7 +32,7 @@ const mountProvider = ({
   session = 'active',
   tokens = [],
 }: {
-  baseline?: string;
+  baseline?: string | (() => string | null);
   client: { setAuth: (fetchToken: FetchToken) => void };
   initialToken?: string;
   optimisticAuth?: boolean;
@@ -151,5 +154,67 @@ describe('identity guard across built entrypoints', () => {
     });
 
     expect(state).toEqual({ isAuthenticated: false, token: null });
+  });
+
+  test("a sibling in kitcn/auth/client is bound by another guard's current getter", async () => {
+    const page = { identity: 'user_a|session_a' };
+    const tokenForA = identityJwt('user_a', 'session_a');
+    const first = makeClient();
+    mountProvider({
+      baseline: () => page.identity,
+      client: first.client,
+      tokens: [tokenForA],
+    });
+    const second = makeClient();
+    const sibling = mountProvider({
+      client: second.client,
+      tokens: [tokenForA],
+    });
+    await flush();
+    let handed: string | null = null;
+    await act(async () => {
+      handed = await second.fetchers.at(-1)!({ forceRefreshToken: false });
+    });
+    expect(handed).toBe(tokenForA);
+
+    page.identity = 'user_b|session_b';
+    await act(async () => {
+      handed = await second.fetchers.at(-1)!({ forceRefreshToken: false });
+    });
+
+    expect(handed).toBeNull();
+    expect(isDocumentTripped()).toBe(true);
+    expect(sibling.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+  });
+
+  test('an SSR token in kitcn/auth/client is reconciled against the page identity', async () => {
+    const first = mountProvider({
+      baseline: 'user_a|session_a',
+      client: makeClient().client,
+      session: 'pending',
+    });
+    await flush();
+
+    const later = makeClient();
+    const second = mountProvider({
+      baseline: 'user_b|session_b',
+      client: later.client,
+      initialToken: identityJwt('user_b', 'session_b'),
+      session: 'pending',
+    });
+    await flush();
+
+    // Refused and tripped on mount, before anything asks for a token.
+    expect(isDocumentTripped()).toBe(true);
+    expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+    expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+    // Any fetcher Convex was handed hands out nothing.
+    for (const fetchToken of later.fetchers) {
+      let handed: string | null = 'unset';
+      await act(async () => {
+        handed = await fetchToken({ forceRefreshToken: false });
+      });
+      expect(handed).toBeNull();
+    }
   });
 });
