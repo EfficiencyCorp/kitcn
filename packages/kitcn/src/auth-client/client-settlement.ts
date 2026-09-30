@@ -1,4 +1,5 @@
 import type { ConvexReactClient } from 'convex/react';
+import { identityGuardRegistry } from '../react/identity-guard-registry';
 
 // A Convex client's optimistic window ends at its first auth result: the
 // value Convex reports through the `onChange` it is given in `setAuth`. It is
@@ -6,13 +7,12 @@ import type { ConvexReactClient } from 'convex/react';
 // unmount still counts, every provider over the client hears it, and a local
 // session change (which reports nothing) does not.
 // The wrapper is installed by the first provider with `optimisticAuth` over a
-// client; results reported before that are not seen.
-const settledClients = new WeakSet<object>();
-const listeners = new WeakMap<object, Set<() => void>>();
-const watchedClients = new WeakSet<object>();
+// client; results reported before that are not seen. The state lives in the
+// registry shared by every built entry (the Start loader settles clients too).
 
 /** Wraps the client's `setAuth` once, so every `onChange` records settlement. */
 export function watchClientSettlement(client: ConvexReactClient) {
+  const { watchedClients } = identityGuardRegistry();
   if (watchedClients.has(client)) return;
   watchedClients.add(client);
   const setAuth = client.setAuth.bind(client);
@@ -32,21 +32,26 @@ export function watchClientSettlement(client: ConvexReactClient) {
  * The Start loader calls it when it sets auth before any provider renders.
  */
 export function settleClient(client: object) {
+  const { settledClients, settlementListeners } = identityGuardRegistry();
   if (settledClients.has(client)) return;
   settledClients.add(client);
-  for (const listener of [...(listeners.get(client) ?? [])]) listener();
+  for (const listener of [...(settlementListeners.get(client) ?? [])]) {
+    listener();
+  }
 }
 
-export const isClientSettled = (client: object) => settledClients.has(client);
+export const isClientSettled = (client: object) =>
+  identityGuardRegistry().settledClients.has(client);
 
 export const subscribeClientSettlement = (
   client: object,
   listener: () => void
 ) => {
-  let clientListeners = listeners.get(client);
+  const { settlementListeners } = identityGuardRegistry();
+  let clientListeners = settlementListeners.get(client);
   if (!clientListeners) {
     clientListeners = new Set();
-    listeners.set(client, clientListeners);
+    settlementListeners.set(client, clientListeners);
   }
   clientListeners.add(listener);
   return () => {

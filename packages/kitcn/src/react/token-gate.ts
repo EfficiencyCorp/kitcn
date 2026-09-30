@@ -1,25 +1,22 @@
 'use client';
 
 import { type AuthStore, decodeJwtExp } from './auth-store';
+import {
+  identityGuardRegistry,
+  type TokenAdmission,
+} from './identity-guard-registry';
 import { isDocumentTripped, isJwt } from './identity-guard-trip';
 
-/**
- * A provider's identity admission: true to admit the token; when it refuses a
- * token of another identity it trips the document itself.
- */
-export type TokenAdmission = (
-  token: string,
-  options: { announce: boolean }
-) => boolean;
-
-const admissions = new WeakMap<object, TokenAdmission>();
+export type { TokenAdmission } from './identity-guard-registry';
 
 /** Called by the provider that owns `authStore`. */
 export const registerTokenAdmission = (
   authStore: AuthStore,
   admission: TokenAdmission
 ) => {
-  if (authStore.store) admissions.set(authStore.store, admission);
+  if (authStore.store) {
+    identityGuardRegistry().admissions.set(authStore.store, admission);
+  }
 };
 
 /**
@@ -37,7 +34,7 @@ export const admitToken = (
   if (isDocumentTripped()) return false;
   if (!isJwt(token)) return true;
   const admission = authStore.store
-    ? admissions.get(authStore.store)
+    ? identityGuardRegistry().admissions.get(authStore.store)
     : undefined;
   return admission ? admission(token, { announce }) : true;
 };

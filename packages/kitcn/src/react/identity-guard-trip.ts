@@ -8,17 +8,18 @@
 // - The document identity: the first identity a guard knows (from its
 //   baseline, its held SSR token or its first admitted token), so a token
 //   handed out without a provider (the Start loader) is held to it.
-let tripped = false;
-let documentIdentity: string | null = null;
-const listeners = new Set<() => void>();
+// The state lives in the registry shared by every built entry.
+import { identityGuardRegistry } from './identity-guard-registry';
+
 const inBrowser = () => typeof window !== 'undefined';
 
-export const isDocumentTripped = () => tripped;
+export const isDocumentTripped = () => identityGuardRegistry().tripped;
 
 export const tripDocument = () => {
-  if (!inBrowser() || tripped) return;
-  tripped = true;
-  for (const listener of [...listeners]) {
+  const registry = identityGuardRegistry();
+  if (!inBrowser() || registry.tripped) return;
+  registry.tripped = true;
+  for (const listener of [...registry.tripListeners]) {
     try {
       listener();
     } catch (error) {
@@ -29,15 +30,18 @@ export const tripDocument = () => {
 };
 
 export const subscribeDocumentTrip = (listener: () => void) => {
-  listeners.add(listener);
+  const { tripListeners } = identityGuardRegistry();
+  tripListeners.add(listener);
   return () => {
-    listeners.delete(listener);
+    tripListeners.delete(listener);
   };
 };
 
 /** Records the identity a guard admitted, if none is recorded yet. */
 export const recordDocumentIdentity = (identity: string) => {
-  if (inBrowser()) documentIdentity ??= identity;
+  if (!inBrowser()) return;
+  const registry = identityGuardRegistry();
+  registry.documentIdentity ??= identity;
 };
 
 /**
@@ -46,8 +50,9 @@ export const recordDocumentIdentity = (identity: string) => {
  * token of another identity trips the document.
  */
 export const admitDocumentToken = (token: string) => {
-  if (tripped) return false;
-  const expected = documentIdentity ?? currentSourceIdentity();
+  const registry = identityGuardRegistry();
+  if (registry.tripped) return false;
+  const expected = registry.documentIdentity ?? currentSourceIdentity();
   if (
     expected === null ||
     decodeTokenSubjectSessionIdentity(token) === expected
@@ -58,13 +63,12 @@ export const admitDocumentToken = (token: string) => {
   return false;
 };
 
-const identitySources = new Set<() => string | null>();
-
 /**
  * Registers a `tokenIdentityBaseline` getter, read only when a token is
  * admitted outside a provider.
  */
 export const registerDocumentIdentitySource = (source: () => string | null) => {
+  const { identitySources } = identityGuardRegistry();
   identitySources.add(source);
   return () => {
     identitySources.delete(source);
@@ -72,7 +76,7 @@ export const registerDocumentIdentitySource = (source: () => string | null) => {
 };
 
 const currentSourceIdentity = () => {
-  for (const source of identitySources) {
+  for (const source of identityGuardRegistry().identitySources) {
     const identity = source();
     if (identity !== null) return identity;
   }
@@ -121,6 +125,7 @@ export function decodeTokenSubjectSessionIdentity(
 
 /** Test-only: clear the trip and the document identity between tests. */
 export const resetDocumentTripForTests = () => {
-  tripped = false;
-  documentIdentity = null;
+  const registry = identityGuardRegistry();
+  registry.tripped = false;
+  registry.documentIdentity = null;
 };
