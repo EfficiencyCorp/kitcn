@@ -405,7 +405,7 @@ Completion Gates:
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Recorded above |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | (d) reproduced by unit test; other rungs N/A with reason |
 | Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | `client.test.ts` with `main`'s `client.ts`: 13 pass, 1 fail, exit 1 |
-| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 144 pass, 0 fail across the 6 focused test files at the final head (142 after round 5, 135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
+| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 146 pass, 0 fail across the 6 focused test files at the final head (144 after round 6, 142 after round 5, 135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
 | TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` exit 0 |
 | Package exports or file layout changed | yes | Run the relevant package build before final verification and keep generated updates | `bun --cwd packages/kitcn build` exit 0; no generated updates |
 | Package manifests, lockfile, or install graph changed | no | Run `bun install` and relevant package checks | N/A: no manifest or lockfile change |
@@ -895,6 +895,17 @@ Review fixes:
     module-level alternative is distinguished from the implemented
     page-wide trip and identity.
 
+- Round 6 addendum (76f1a84b), behavioural, requester ruling: a trip from
+  any source (this provider, another provider, the Start loader) runs the
+  same steps once in every mounted guarded provider: quarantine, close its
+  client, call `onTokenIdentityChange`; a provider mounted after the trip
+  starts tripped and calls nothing; one throwing subscriber does not stop
+  the others. Tests `a trip from the Start loader calls the mounted guarded
+  provider once` and `a trip calls every mounted guarded provider once,
+  even when one callback throws`, both red at d58ed1e2
+  (`kitcn-1596-bodies/round8-red.log`). The concurrent-first-tokens test
+  now expects the winning provider's callback once too.
+
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
 |------------------------|-------|---------------------|------------|
@@ -1038,7 +1049,7 @@ Verification evidence:
     `intent:validate` "all passed", `intent:stale` "All skills up-to-date".
   - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
     as blocked or handed-off; not closure).
-- Final head (current; Bun 1.3.9, HEAD a1bc229f plus this plan):
+- Historical snapshot, fix round 6 (Bun 1.3.9, HEAD a1bc229f plus this plan):
   - `bun --cwd packages/kitcn build`: exit 0 (at 05aeda27; a1bc229f
     changes only a test).
   - Focused (`convex-auth-provider.test.tsx` 83, `context.test.tsx` 11,
@@ -1050,6 +1061,23 @@ Verification evidence:
   - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
     earlier lane passed: lint (biome 978 files, eslint), typecheck 5/5,
     `test:bun` 1511 pass / 0 fail (154 files), `test:vitest` 1053 pass / 14
+    skipped, no type errors, `test:cli` 124 pass / 0 fail, `test:concave`
+    "Concave smoke passed".
+  - `test:verify`: exit 0.
+  - Docs: `client.mdx` compiles; skill mirror synced; `intent:validate` "all
+    passed", `intent:stale` "All skills up-to-date".
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Final head (current; Bun 1.3.9, HEAD f8ff0ae1 plus this plan):
+  - `bun --cwd packages/kitcn build`: exit 0.
+  - Focused (`convex-auth-provider.test.tsx` 85, `context.test.tsx` 11,
+    `auth-mutations.test.tsx` 11, `use-query-options.test.tsx` 24,
+    `client.test.ts` 14, `index.retry.test.ts` 1): 146 pass, 0 fail,
+    exit 0, 0 `act` warnings.
+  - `bun lint:fix`: exit 0, 978 files, no fixes applied, source unchanged.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint (biome 978 files, eslint), typecheck 5/5,
+    `test:bun` 1513 pass / 0 fail (154 files), `test:vitest` 1053 pass / 14
     skipped, no type errors, `test:cli` 124 pass / 0 fail, `test:concave`
     "Concave smoke passed".
   - `test:verify`: exit 0.
@@ -1102,6 +1130,7 @@ Source-listed case matrix:
 | 39 | Authenticated publication re-admits the token | provider test (U4) | success, `true` (red) | `TOKEN_IDENTITY_CHANGED`, trip | pass | done |
 | 40 | Start loader refuses another identity known from a provider's baseline or held token at mount | provider test (V1) | B handed out (red) | refused, page tripped | pass | done |
 | 41 | No optimistic window over a loader-authenticated client; fresh client keeps it | provider test (V2) | window opened (red) | closed; control open | pass | done |
+| 42 | A trip from any source calls each mounted guarded provider's callback once, after closing its client | provider tests (round 6 addendum) | callback 0 (red) | once each | pass | done |
 | 25 | Refusal memory pruned and bounded | superseded by S1: `TokenRefusals` and its tests deleted | N/A | N/A | N/A | superseded |
 | 26 | Optimistic window ends at the client's first auth result; no refusal count, post-confirmation refusal or remount reopens it | provider tests (S1) | reopened (red) | closed | pass | done |
 | 27 | Hard load: a fresh client with an SSR token still opens before confirmation | provider test (S1 control) | open | open | pass | done |
@@ -1117,7 +1146,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: server logger red (1 fail); features N/A; browser N/A
-  - Verified: 144 focused pass, full `test:bun` 1511/0, `bun check` lanes
+  - Verified: 146 focused pass, full `test:bun` 1513/0, `bun check` lanes
     the diff can affect pass (stops at pre-existing fixture drift); browser
     N/A
 - Browser check: N/A, no rendered UI.
@@ -1148,10 +1177,10 @@ Task-style PR body contract:
 - Never include a line that links to the current PR itself.
 
 Final handoff / sync:
-- Commit: thirty-one local commits on `feat/optimistic-auth-gate` (four
+- Commit: thirty-four local commits on `feat/optimistic-auth-gate` (four
   before review, four in fix round 1, five in fix round 2, five in fix
   round 3, six in fix round 4 including its addendum, three in fix round
-  5, four in fix round 6).
+  5, seven in fix round 6 including its addendum).
 - PR: #473.
 - Issue: N/A.
 - Browser proof: N/A.
