@@ -1,3 +1,9 @@
+import { settleClient } from '../auth-client/client-settlement';
+import {
+  admitToken,
+  isDocumentTripped,
+} from '../react/identity-guard-registry';
+
 export type MaybePromise<T> = Promise<T> | T;
 
 export type StartLoaderAuthClient = {
@@ -45,7 +51,14 @@ export const syncConvexAuthForStartLoader = async ({
   const serverHttpClient = isStartLoaderConvexQueryClient(convex)
     ? convex.serverHttpClient
     : undefined;
-  const token = (await getToken()) ?? null;
+  const loaderToken = (await getToken()) ?? null;
+  // The identity guard's admission, as for any hand-out: in the browser,
+  // nothing after a trip and only the identity the page is bound to (a token
+  // of another identity trips it); on the server it has no page state.
+  const admit = (candidate: string) =>
+    admitToken(candidate, { use: 'handout' });
+  const token =
+    loaderToken !== null && !admit(loaderToken) ? null : loaderToken;
   const previousToken = startLoaderAuthTokens.get(convex);
 
   if (previousToken === token) {
@@ -60,7 +73,17 @@ export const syncConvexAuthForStartLoader = async ({
     return { isAuthenticated: false, token };
   }
 
-  authClient.setAuth(async () => token);
+  // The loader authenticates before any provider renders, so no optimistic
+  // window opens over this client. Checked again at every hand-out.
+  settleClient(authClient);
+  authClient.setAuth(async () => (admit(token) ? token : null));
+  // `setAuth` may run code that trips the page before it returns.
+  if (isDocumentTripped()) {
+    startLoaderAuthTokens.set(convex, null);
+    authClient.clearAuth();
+    serverHttpClient?.clearAuth?.();
+    return { isAuthenticated: false, token: null };
+  }
   serverHttpClient?.setAuth(token);
   return { isAuthenticated: true, token };
 };

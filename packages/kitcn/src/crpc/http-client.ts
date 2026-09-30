@@ -126,6 +126,24 @@ export function buildSearchParams(
 }
 
 /**
+ * A base-headers result may carry this (non-enumerable, so spreads drop it):
+ * called synchronously right before dispatch, after every await; `false`
+ * drops the `Authorization` it came with, unless a per-call header replaced
+ * it. kitcn's auth token source uses it so a token is re-admitted at send.
+ */
+export const RECHECK_AUTHORIZATION = Symbol.for(
+  'kitcn.http.recheckAuthorization'
+);
+
+export const withAuthorizationRecheck = <
+  T extends { [key: string]: string | undefined },
+>(
+  headers: T,
+  recheck: () => boolean
+): T =>
+  Object.defineProperty(headers, RECHECK_AUTHORIZATION, { value: recheck });
+
+/**
  * Hono-style HTTP request executor.
  * Processes args in the same way as Hono's ClientRequestImpl.fetch().
  */
@@ -221,6 +239,24 @@ export async function executeHttpRequest(opts: {
   }
   Object.assign(finalHeaders, headerValues);
 
+  // Last check after every await: the base Authorization is dropped if its
+  // source no longer admits it.
+  const recheck = (
+    resolvedBaseHeaders as
+      | { [RECHECK_AUTHORIZATION]?: () => boolean }
+      | undefined
+  )?.[RECHECK_AUTHORIZATION];
+  const sendHeaders =
+    recheck &&
+    finalHeaders.Authorization === resolvedBaseHeaders?.Authorization &&
+    !recheck()
+      ? Object.fromEntries(
+          Object.entries(finalHeaders).filter(
+            ([key]) => key !== 'Authorization'
+          )
+        )
+      : finalHeaders;
+
   // Build URL with path params
   let url = opts.convexSiteUrl + path;
   if (args.params) {
@@ -244,7 +280,7 @@ export async function executeHttpRequest(opts: {
   const response = await fetchFn(url, {
     body: setBody ? rBody : undefined,
     method: methodUpperCase,
-    headers: finalHeaders,
+    headers: sendHeaders,
     ...mergedClientOpts.init,
   });
 

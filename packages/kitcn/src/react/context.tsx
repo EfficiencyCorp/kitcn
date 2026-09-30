@@ -15,6 +15,7 @@ import {
   useMemo,
   useRef,
 } from 'react';
+import { withAuthorizationRecheck } from '../crpc/http-client';
 import type { HttpClientError } from '../crpc/http-types';
 import type { DataTransformerOptions } from '../crpc/transformer';
 import type { FnMeta, Meta } from '../crpc/types';
@@ -35,6 +36,7 @@ import {
   type VanillaHttpCRPCClientFromRouter,
 } from './http-proxy';
 import { createCRPCOptionsProxy } from './proxy';
+import { admitStoreToken } from './token-gate';
 import { createVanillaCRPCProxy } from './vanilla-client';
 
 // ============================================================================
@@ -238,45 +240,33 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
         convexSiteUrl: httpOptions.convexSiteUrl,
         routes: meta._http,
         headers: async () => {
-          if (fetchAccessToken) {
-            const expiresAt = authStore.get('expiresAt');
-            // eslint-disable-next-line react-hooks/purity -- called in async callback, not during render
-            const timeRemaining = expiresAt ? expiresAt - Date.now() : 0;
-            const guardedToken = await fetchAccessToken({
-              forceRefreshToken: !!expiresAt && timeRemaining < 60_000,
-            });
-            const userHeaders =
-              typeof httpOptions.headers === 'function'
-                ? await httpOptions.headers()
-                : httpOptions.headers;
-            return guardedToken
-              ? { ...userHeaders, Authorization: `Bearer ${guardedToken}` }
-              : { ...userHeaders };
-          }
-
-          // Use authStore.get() for non-reactive access
-          const token = authStore.get('token');
           const expiresAt = authStore.get('expiresAt');
-
-          // Check cache (60s leeway)
           // eslint-disable-next-line react-hooks/purity -- called in async callback, not during render
-          const now = Date.now();
-          const timeRemaining = expiresAt ? expiresAt - now : 0;
-
-          if (token && expiresAt && timeRemaining >= 60_000) {
-            const userHeaders =
-              typeof httpOptions.headers === 'function'
-                ? await httpOptions.headers()
-                : httpOptions.headers;
-            return { ...userHeaders, Authorization: `Bearer ${token}` };
-          }
-
-          // No auth - return user headers only
+          const timeRemaining = expiresAt ? expiresAt - Date.now() : 0;
+          const heldToken = authStore.get('token');
+          // The guarded fetcher when a provider supplies one, else the cached
+          // token (60s leeway).
+          const token = fetchAccessToken
+            ? await fetchAccessToken({
+                forceRefreshToken: !!expiresAt && timeRemaining < 60_000,
+              })
+            : heldToken && expiresAt && timeRemaining >= 60_000
+              ? heldToken
+              : null;
           const userHeaders =
             typeof httpOptions.headers === 'function'
               ? await httpOptions.headers()
               : httpOptions.headers;
-          return { ...userHeaders };
+          // Admitted after the last await here, and again at send, after the
+          // per-call headers load.
+          const admit = () =>
+            !!token && admitStoreToken(authStore, token, { use: 'handout' });
+          return admit()
+            ? withAuthorizationRecheck(
+                { ...userHeaders, Authorization: `Bearer ${token}` },
+                admit
+              )
+            : { ...userHeaders };
         },
         fetch: httpOptions.fetch,
         onError: httpOptions.onError,

@@ -19,6 +19,8 @@ import {
   useAuthStore,
 } from './auth-store';
 import { useConvexQueryClient } from './context';
+import { isDocumentTripped } from './identity-guard-registry';
+import { publishAuthenticated, publishToken } from './token-gate';
 
 export { AuthMutationError, isAuthMutationError } from '../crpc/auth-error';
 
@@ -41,12 +43,27 @@ type SignInMutationOptionsHook<TData, TVariables = void> = (
 ) => UseMutationOptions<TData, DefaultError, TVariables>;
 
 /** Poll until JWT token exists (auth complete) (max 5s) */
+// A tripped identity guard quarantined this document (another account took
+// over): signing in here would only publish into a dead end, so it fails.
+const tokenIdentityChangedError = () =>
+  new AuthMutationError({
+    code: 'TOKEN_IDENTITY_CHANGED',
+    message: 'This page switched accounts. Reload it to sign in.',
+    status: 401,
+    statusText: 'UNAUTHORIZED',
+  });
+
+const assertDocumentNotTripped = () => {
+  if (isDocumentTripped()) throw tokenIdentityChangedError();
+};
+
 const waitForAuth = async (
   store: AuthStore,
   timeout = 5000
 ): Promise<boolean> => {
   const start = Date.now();
   while (Date.now() - start < timeout) {
+    assertDocumentNotTripped();
     if (store.get('token')) return true;
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -93,9 +110,16 @@ const seedReturnedToken = (store: AuthStore, value: unknown) => {
     return;
   }
 
-  store.set('token', token);
-  store.set('expiresAt', decodeJwtExp(token));
-  store.set('sessionSyncGraceUntil', Date.now() + AUTH_SESSION_SYNC_GRACE_MS);
+  // Through the token gate: a trip, or a JWT for another identity (which
+  // trips the document), fails the mutation instead of publishing it.
+  if (
+    !publishToken(store, token, {
+      announce: true,
+      sessionSyncGraceUntil: Date.now() + AUTH_SESSION_SYNC_GRACE_MS,
+    })
+  ) {
+    throw tokenIdentityChangedError();
+  }
   if (decodeJwtExp(token) === null) {
     writeAuthSessionFallbackToken(token);
   }
@@ -307,6 +331,7 @@ export function createAuthMutations(
         if (typeof signInSocial !== 'function') {
           throw new Error('Auth client does not expose signIn.social');
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signInSocial,
           withDisabledSessionSignal(args)
@@ -317,7 +342,9 @@ export function createAuthMutations(
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
-        authStoreApi.set('isAuthenticated', true);
+        if (!publishAuthenticated(authStoreApi)) {
+          throw tokenIdentityChangedError();
+        }
         return res;
       },
     };
@@ -334,6 +361,7 @@ export function createAuthMutations(
         if (typeof signIn !== 'function') {
           throw new Error(`Auth client does not expose signIn.${signInMethod}`);
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signIn,
           withDisabledSessionSignal(args)
@@ -344,7 +372,9 @@ export function createAuthMutations(
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
-        authStoreApi.set('isAuthenticated', true);
+        if (!publishAuthenticated(authStoreApi)) {
+          throw tokenIdentityChangedError();
+        }
         return res;
       },
     };
@@ -360,6 +390,7 @@ export function createAuthMutations(
         if (typeof signUpEmail !== 'function') {
           throw new Error('Auth client does not expose signUp.email');
         }
+        assertDocumentNotTripped();
         const res = (await callAuthMethod(
           signUpEmail,
           withDisabledSessionSignal(args)
@@ -370,7 +401,9 @@ export function createAuthMutations(
         seedReturnedToken(authStoreApi, res);
         await hydrateReturnedSession(authClient, res);
         await ensureAuth(authStoreApi);
-        authStoreApi.set('isAuthenticated', true);
+        if (!publishAuthenticated(authStoreApi)) {
+          throw tokenIdentityChangedError();
+        }
         return res;
       },
     };
