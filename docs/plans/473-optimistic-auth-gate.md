@@ -24,6 +24,10 @@ Linked plans:
 - None.
 
 User requirements:
+- Latest steering: `fix...` authorizes repairing the Expo fixture drift that
+  blocks required CI, then continuing PR #473 closeout. Normalize the proven
+  host-dependent Expo settings at the fixture boundary and refresh all donor
+  snapshots through `tooling/fixtures.ts`; do not hand-edit generated files.
 - Adopt the existing PR instead of closing it because its work is substantive.
 - Finish the exact PR through the task contract, then return control to
   autoclosure for feedback, final checks, and merge.
@@ -86,6 +90,11 @@ Constraints:
 - Do not add broad ceremony when the task is trivial or docs-only.
 
 Boundaries:
+- Authorized CI repair: `tooling/fixtures.ts`, its regression test, and
+  generated `fixtures/**`. The full gate also reproduced Next donor dependency
+  drift. Preserve deterministic donor output; exclude only Expo's
+  host-dependent `.claude/settings.json`. No package API or release artifact
+  change. Browser proof is N/A for fixture normalization and agent guidance.
 - Source of truth: PR #473 body, its immutable head, and the package owners in
   `packages/kitcn`.
 - Allowed edit scope: the existing changed package files and tests, its
@@ -111,10 +120,10 @@ Task state:
 - task_type: feature recovery and package API verification
 - task_complexity: non-trivial, but not a new architecture task because the PR
   contract and implementation boundary are already concrete
-- current_phase: closeout
-- current_phase_status: complete at the final material head
-- next_phase: root autoclosure receipt and merge
-- goal_status: complete; root autoclosure owns external landing
+- current_phase: verified task delivery
+- current_phase_status: full repository gate and source review complete
+- next_phase: final push/body read-back; root external receipt and protected merge
+- goal_status: active until final push/body read-back; root owns external landing
 
 Current verdict:
 - verdict: ready
@@ -123,8 +132,8 @@ Current verdict:
 - next owner: root autoclosure
 - reason: source review repaired the identity callback ordering, getter
   admission semantics, public types, documentation, and test isolation; every
-  owning local proof passes apart from the explicitly waived unrelated Expo
-  fixture drift
+  package proof, fixture normalization regression, canonical generation and
+  complete bun check pass without a waiver; final push/body read-back pending
 
 Implementation readiness:
 - verdict: ready
@@ -197,10 +206,10 @@ Start Gates:
 | Package/API pack selected | yes | `package-api` is materialized in this plan |
 | Public surface or package boundary identified | yes | `ConvexAuthProvider` props, cRPC mutation options, HTTP token context, and server `ConvexQueryClient` behavior |
 | Convex entry/import graph impact identified | yes | Client and server React entry graphs require an import audit after recovery |
-| CLI/scaffold/generated impact identified | no | Immutable PR diff changes no CLI, scaffold, fixture, generated, or tooling owner |
+| CLI/scaffold/generated impact identified | yes | Latest repair extends only fixture normalization and canonically regenerated donor snapshots; product scaffold source is unchanged |
 | Release artifact path selected | yes | `.changeset/optimistic-auth-gate.md` |
 | `changeset` skill loaded when `.changeset` is required | yes | Loaded and compared the draft with the current changelog style |
-| Package build / fixture impact decision recorded | yes | Package build applies and passes. Fixture generation is N/A to the PR; the user explicitly waived only the unrelated live Expo template drift lane. |
+| Package build / fixture impact decision recorded | yes | Package build passes; all eight fixtures regenerated, validated, and checked against fresh output. |
 
 Work Checklist:
 - [x] If a duration was requested, it is recorded as minimum active work unless
@@ -278,7 +287,7 @@ Work Checklist:
 - [x] Package/API pack: docs and `packages/kitcn/skills/kitcn/**` stay
       current-state synchronized when public guidance changes.
 - [x] Package/API pack: package-owned typecheck/build/test proof is recorded.
-- [x] Package/API pack: `packages/kitcn` build passed; fixture generation is N/A to this diff and the unrelated Expo drift is explicitly waived.
+- [x] Package/API pack: `packages/kitcn` build passed; all eight fixtures regenerated canonically after the authorized CI repair.
 
 Completion Gates:
 | Gate | Applies | Required action | Evidence |
@@ -291,18 +300,18 @@ Completion Gates:
 | Targeted behavior verification | yes | Run focused proof | 97 focused tests pass with 293 assertions. |
 | TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` passes. |
 | Package exports or file layout changed | yes | Build emitted package surfaces | `bun --cwd packages/kitcn build` passes. |
-| Package manifests, lockfile, or install graph changed | no | N/A | No manifest, lockfile, or install-graph delta. |
+| Package manifests, lockfile, or install graph changed | yes | Regenerate and validate | Six generated web manifests reflect donor cn/lucide-react drift; root/package manifests and lockfile are unchanged. |
 | Agent rules or skills changed | no | N/A | No agent workflow source changed; the package skill documentation mirror was regenerated from its owner. |
 | Workspace authority proof | yes | Prove from the PR worktree | Every command ran in `/Users/zbeyens/.codex/worktrees/pr-473-autoclosure/better-convex`. |
 | Browser surface changed | no | N/A | No rendered route or native browser behavior changed. |
 | Browser final proof | no | N/A | Package tests own the behavior. |
 | UI walkthrough | no | N/A | No UI or rendered output changed. |
-| Scaffold or fixture output changed | no | N/A | No scaffold/fixture source changed; user waived only unrelated moving Expo SDK 55 drift. |
+| Scaffold or fixture output changed | yes | Canonical sync/check | All eight fixtures synchronized, validated, and checked. Only Expo guidance/settings and six web donor manifests changed. |
 | Package behavior or public API changed | yes | Maintain release artifact | `.changeset/optimistic-auth-gate.md` describes the package delta. |
 | Docs and kitcn skill sync changed | yes | Keep guidance synchronized | `www` auth/mutation docs and `packages/kitcn/skills/kitcn` references match; generated mirror is byte-identical. |
 | Docs or content changed | yes | Verify current-state claims | Source-backed examples and links were reviewed; rendered proof is N/A for incidental API docs. |
 | High-risk mini gate | yes | Prove identity failure modes | Tests cover expiry, refusal, refresh, remount, live getter admission, callback throws, HTTP reuse, optimistic rollback, and request isolation. |
-| Agent-native review for agent/tooling changes | no | N/A | No agent action or workflow changed. |
+| Agent-native review for agent/tooling changes | yes | Source and proof parity audit | Existing fixtures:sync/check routes own the action. Durable owner is tooling/fixtures.ts; donor guidance stays generated, no hidden local Claude dependency or manual snapshot edits. Regression and sync pass. |
 | Local install corruption suspected | no | N/A | The initial failure was missing fresh-worktree build artifacts, resolved by the required package build. |
 | Commit created | yes | Commit verified changes | Material repairs are committed as `ea5e442d5774fc7f7c0aa1f1d6bae8c1c34b7747`. |
 | PR create or update | yes | Push and read back | Material head is live on PR #473; root autoclosure owns the final plan-only push and merge. |
@@ -318,12 +327,12 @@ Completion Gates:
 | Goal plan complete | yes | Run the goal checker | This final plan-only commit is checked before the root receipt. |
 | Public API / package boundary proof | yes | Audit public types and entries | Compile-time tests cover provider props and `optimisticUpdate`; source-level `any` was removed. |
 | Convex bundle/import proof | yes | Keep entry graphs narrow | Changes stay in existing auth-client/react/server owners; no new monolithic import graph was added. |
-| CLI/scaffold/generated proof | no | N/A | No CLI or scaffold contract changed; package skill mirror regenerated from source. |
+| CLI/scaffold/generated proof | yes | Canonical regeneration | Product scaffold contract unchanged; fixture normalizer has 14 passing tests and all eight snapshots were generated and validated. |
 | Release artifact classification | yes | Classify delta | Published `kitcn` package behavior, types, docs, and runtime changed. |
 | Published package changeset | yes | Keep one package changeset | `.changeset/optimistic-auth-gate.md` is present; fixed package config intentionally includes `@kitcn/resend`. |
 | No release artifact | no | N/A | A release artifact is required and present. |
 | Package typecheck/build/test | yes | Run owning proofs | Typecheck/build pass; focused 97-test set and full repository test lanes pass. |
-| Fixture/scaffold generation | no | N/A | No fixture/scaffold delta; unrelated Expo drift was explicitly waived. |
+| Fixture/scaffold generation | yes | Canonical sync/check | fixtures:sync and all eight fixture checks pass; full bun check including verify/runtime exits 0. |
 | Docs/package skill sync | yes | Synchronize guidance | Source and generated skill references match the `www` guidance. |
 
 Phase / pass table:
@@ -352,6 +361,27 @@ Decisions and tradeoffs:
   repository is closed alpha and the public additions are source-compatible.
 
 Implementation notes:
+- Fixture repair data shape: the existing `TemplateKey` registry identifies
+  donor families. The shared private artifact normalizer receives that key;
+  public snapshot/comparison signatures remain unchanged.
+- Architect ground: sync normalizes the generated app before copying it;
+  checks normalize the fresh app and both comparison operands. The existing
+  shared artifact boundary owns all three paths, before the owned/full split.
+- Architect phases: ground complete; two independent inherited-model sketches
+  complete; agree proceeded under existing authority; implement matches A;
+  scrap N/A because no contract deviation occurred. Model diversity is reduced
+  by the repository's inherit-parent role configuration.
+- Arena phases: framed correctness, retention, interface depth, maintainability
+  and proportionality; compared A (private donor discriminator) and B (registry
+  omission field); cross-judge scored A 5/5/5/4/5, B 5/5/3/4/3; picked A; no
+  graft because B's configuration is unearned for one known artifact; red-green
+  verification passed. No new module, registry policy API, or scaffold change.
+- Throughput checkpoint: root owns regression and plan evidence; repair agent
+  owns generator source and canonical fixture regeneration. Serialize sync,
+  fixture checks and package builds to avoid shared packing/build races.
+- Test-first cadence: red was observed before the source patch. A separate
+  knowingly failing commit is skipped to preserve the user-owned task bundle;
+  the final commit includes the verified checkout.
 - `WeakMap`-backed token state and file-scoped spies keep retry tests isolated.
 - Public optimistic update args use Convex `Value`, with compile-time API tests.
 - Current-state docs and published skill references describe the auth gate,
@@ -374,6 +404,21 @@ Error attempts:
 | `fixtures:check` detects upstream Expo guidance drift outside the PR diff | 1 | Keep unrelated fixture churn out of PR #473 and request either a waiver or a separately scoped repair | Resolved for this PR by the user's `go` at 2026-09-30T00:58:19+02:00. The waiver applies only to this unrelated fixture lane. |
 
 Verification evidence:
+- CI repair red signal: `bun test ./tooling/fixtures.test.ts` reports 12 pass,
+  2 fail. Both Expo keys retain host-dependent settings, receiving `true` where
+  absence (`false`) is required. The donor's `isClaudeCodeInstalled` condition
+  is visible in installed `create-expo@5.0.3` build 205, lines 1152-1179.
+- Full gate after snapshot-only regeneration passes Expo locally but reproduces
+  Next dependency drift (`cn` and `lucide-react`). Canonical all-fixture sync
+  must retain those changes rather than hide them from comparison.
+- CI repair baseline: final-head GitHub run 36645318114 passes source tests and
+  types, then fails on stale Expo-generated `.claude/settings.json`, `AGENTS.md`,
+  and `CLAUDE.md`. The original fixture check is the integration red harness;
+  the host-dependent normalization has its own narrow red-green regression.
+- CI repair green signal: `bun test ./tooling/fixtures.test.ts` passes all 14
+  tests and 57 assertions, including idempotent Expo snapshot removal, both
+  comparison scopes, and preservation of AGENTS, other Claude files, and
+  non-Expo settings. No-comments audit found zero new comments or suppressions.
 - Red proof: `bun test packages/kitcn/src/auth-start/index.retry.test.ts packages/kitcn/src/react/client.test.ts` failed two server-mode tests because `consistentQuery` was absent after a process-global `convex/browser` mock.
 - Green proof: the same command passes 15 tests after file-scoped spies replace the global mocks.
 - `bun --cwd packages/kitcn typecheck` passes.
@@ -382,8 +427,16 @@ Verification evidence:
 - The full Bun lane passes 1,475 tests with 4,448 assertions. Vitest passes
   1,053 tests with 14 skipped and no type errors.
 - `bun lint`, `bun run intent:validate`, and `bun run intent:stale` pass.
-- `bun check` reaches only the explicitly waived upstream Expo SDK 55 guidance
-  drift outside the PR diff after every owning package and test gate passes.
+- Latest `bun check` exits 0 with no waiver. It passes 1,475 Bun tests, 1,053
+  Vitest tests (14 skipped), 124 CLI tests, Concave smoke, all eight fixture
+  checks, `kitcn verify`, and every runtime scenario. Log
+  `/tmp/pr473-fixed-check.log`. Earlier red fixture runs are superseded.
+- Incremental autoreview exits 0, TruffleHog clean, no accepted/actionable
+  findings. Direct source review confirms both existing callers use the same
+  donor-discriminated normalizer and no public scaffold behavior changed.
+- Deslop delta adds no finding in the incremental tooling repair. Existing
+  retry-test setup warnings reflect deliberate isolated spies; no speculative
+  deduplication reintroduces the process-global leak.
 
 Source-listed case matrix:
 | Case | Source claim | Harness | Before | Expected after | Evidence | Status |
@@ -407,8 +460,8 @@ Final handoff contract:
 - Browser check: N/A; non-visual package behavior.
 - Outcome: optimistic auth, guarded identity, HTTP token reuse, optimistic
   mutations, and deterministic server construction are verified.
-- Caveat: unrelated moving Expo SDK 55 fixture drift is user-waived. GitHub CI
-  and a post-push code-owner approval remain root-autoclosure gates.
+- Caveat: the authorized fixture repair supersedes the earlier local waiver.
+  Required GitHub CI and post-push code-owner approval remain mandatory.
 - Design:
   - Chosen boundary: shared token admission plus existing Convex client/store.
   - Why not quick patch: per-query checks would split identity ownership.
@@ -477,18 +530,17 @@ Timeline:
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Exact-PR recovery is complete; implementation review is active. |
-| Where am I going? | Push the plan and test-isolation fix, update the PR body, then return to autoclosure review. |
+| Where am I? | Exact-PR package recovery and authorized CI fixture repair pass the complete repository gate. |
+| Where am I going? | Finish full gate, push verified repair, update body, then external receipt, required CI and protected merge. |
 | What is the goal? | Recover and verify PR #473 without changing its product contract. |
-| What have I learned? | The implementation is substantive. One unrelated process-global test mock broke the branch's server-client tests. Expo fixture drift remains outside the PR diff. |
-| What have I done? | Created the dedicated task plan, fixed the test leak, and passed the focused tests, package typecheck, package build, lint, and full Bun suite. |
+| What have I learned? | Expo donor settings depend on the generating host; normalization belongs at the shared snapshot/comparison boundary. Web donor dependency drift must remain visible. |
+| What have I done? | Repaired package defects, added red-green normalization coverage, regenerated all fixtures, and passed incremental autoreview with no findings. |
 
 Open risks:
-- `bun check` is red only because the current external Expo template differs
-  from committed fixture guidance. The user explicitly waived only that
-  unrelated lane for PR #473; every other proof and GitHub gate remains active.
-- The public auth and React API diff still needs independent source review,
-  full live feedback triage, and final exact-head proof after recovery.
+- Local bun check is green; required GitHub CI still needs a fresh final-head
+  run. Local proof is not a server-enforced status or approval waiver.
+- Independent final-head Shipping verdict and live feedback/receipt cycle
+  remain required before merge.
 - GitHub approval is an external post-push wait. The merge must not use the
   current account's ruleset bypass.
 

@@ -25,6 +25,10 @@ Linked plans:
   exact PR contract, package proof, task-style PR body, and task evidence.
 
 User requirements:
+- Latest steering: `fix...` authorizes the fixture repair that blocked CI.
+  Resume task #473, normalize proven host-dependent Expo settings, refresh all
+  donor snapshots after Next drift is reproduced, run the full gate, update
+  the existing PR, and continue to its protected merge gates.
 - Run the repaired `autoclosure` workflow on PR #473 now.
 - Preserve and continue partially good work. Close only when no usable task
   state exists.
@@ -35,15 +39,15 @@ Completion threshold:
   live head and names PR #473.
 - Every linked-plan and closure-matrix gate is complete or N/A with evidence.
 - Focused package tests, the `packages/kitcn` build, and lint pass on the final
-  committed head. Every applicable `bun check` lane passes; the unrelated
-  moving Expo fixture lane has the user's exact waiver recorded below.
+  committed head. Every applicable `bun check` lane passes. The latest repair
+  authorization supersedes the earlier local fixture waiver.
 - The final feedback inventory has zero actionable P1-or-higher items. Every
   lower-priority item has an explicit user deferral or a concrete non-actionable
   verdict.
 - The terminal receipt binds its proof to the exact live head. A guarded merge
   lands that head in `main`, and GitHub reports the PR as merged.
 - No new product scope. Completion requires every applicable lane below to have
-  fresh evidence, the exact unrelated fixture waiver, review findings closed,
+  fresh evidence, review findings closed,
   required GitHub `CI` passing, authorized delivery complete, and the goal
   checker passing. A local fixture waiver cannot satisfy branch protection.
 
@@ -63,6 +67,9 @@ Constraints:
 - Use a different diagnostic after repeated failure signatures.
 
 Boundaries:
+- Scope extension authorized by `fix...`: repair fixture normalization in
+  `tooling/fixtures.ts` with a red-green regression, then regenerate
+  `fixtures/**` canonically. No package API or manual fixture patching.
 - intended delta: the optimistic auth gate, JWT identity guard, guarded HTTP
   token source, Convex optimistic mutation passthrough, and deterministic
   server-client construction described by PR #473
@@ -92,17 +99,17 @@ Start Gates:
 | Recoverable task state adopted | yes | Preserved branch, exact-PR plan, recovery fix, task-format body, and immutable-head read-back are live |
 | Active source/plan reconstructed | yes | PR #473 body, commits, changed paths, comments, and checks read from GitHub; immutable head fetched locally |
 | Intended delta and exclusions recorded | yes | Boundaries above mirror the PR contract and forbid new product scope or topology changes |
-| Closure matrix classified | yes | Package/API, changeset, source behavior, feedback, review, repository check, and GitHub delivery apply; fixtures, UI, and agent workflow are currently N/A |
+| Closure matrix classified | yes | Package/API, generated fixtures, changeset, source behavior, feedback, review, repository check, and GitHub delivery apply; UI is N/A |
 | Live PR feedback target resolved | yes | PR #473 at recovered head `29f558fbfd5ff37222d30d006a9fbee24744e9a1` |
 | Feedback proof checkout bound to PR head | yes | Local `HEAD`, fetched PR ref, and live OID matched before feedback review |
 | Unfiltered feedback inventory | yes | Helper, raw REST, and paginated GraphQL inventories were fetched twice; zero actionable items exist |
 | GitHub delivery expectation recorded | yes | Recover exact-PR evidence, push to `EfficiencyCorp:feat/optimistic-auth-gate`, verify, then merge only with an exact-head guard |
-| Active goal checked or created | yes | Active goal points to this plan and names the task-evidence, feedback, proof, check, merge, and receipt threshold |
+| Active goal checked or created | yes | get_goal returns null after resume; existing exact-PR plans remain the acceptance record. No new native goal inferred. |
 | Agent-native pack selected | yes | Required by the autoclosure goal contract |
-| Agent-facing action surface identified | no | The PR does not change rules, skills, prompts, commands, or agent actions; the plan only records this run |
-| Source rule versus generated mirror boundary identified | no | No agent source or generated mirror belongs to PR #473 |
+| Agent-facing action surface identified | yes | Generated Expo guidance and fixture sync/check tooling; no new user action or workflow rule |
+| Source rule versus generated mirror boundary identified | yes | Donor generates guidance; tooling/fixtures.ts owns snapshot normalization. Never manually edited fixture docs/settings. |
 | Installed-skill lock versus local-rule owner identified | no | No installed skill or lock state belongs to PR #473 |
-| `agent-native-reviewer` loaded or waiver recorded | no | N/A because the PR does not change agent or tooling behavior |
+| `agent-native-reviewer` loaded or waiver recorded | yes | Source, route, discoverability, generation and proof parity audit passes for fixture maintenance |
 
 Closure matrix:
 | Lane | Applies | Owner/proof | Status |
@@ -114,13 +121,13 @@ Closure matrix:
 | source behavior | yes | 97 focused tests plus direct source review | complete |
 | package/API/build | yes | package typecheck/build and public type coverage | complete |
 | generated output | yes | published skill mirror regenerated from package skill source | complete |
-| fixtures/scenarios | no | N/A: no scaffold source changed; unrelated Expo drift explicitly waived | complete |
+| fixtures/scenarios | yes | 14 normalization tests, canonical all sync, all eight fixture checks and runtime scenarios pass | complete |
 | docs/package skill | yes | `www` and package skill references synchronized | complete |
 | changeset | yes | `.changeset/optimistic-auth-gate.md`; fixed package group audited | complete |
 | agent workflow | no | N/A: no workflow action or rule changed | complete |
 | live PR feedback | yes | helper + raw REST + paginated GraphQL; zero actionable P0-P3 | complete |
 | cleanup/review | yes | no-comments, direct P1 audit, agent-native boundary audit, autoreview clean | complete |
-| repository check | yes | all owning lanes pass; required GitHub `CI` still fails on the unrelated Expo SDK 55 fixture drift | blocked |
+| repository check | yes | bun check exits 0 after authorized fixture repair, including CI/verify/runtime lanes | complete |
 | GitHub delivery | yes | material head pushed/read; exact-head receipt and merge must wait for required `CI` plus code-owner approval | blocked |
 
 Work Checklist:
@@ -214,8 +221,8 @@ Work Checklist:
 - [x] Accepted cleanup and review findings are closed.
 - [ ] PR body and check state must be updated/read back after the final blocker
       evidence push.
-- [x] Residual waiver has exact evidence and owner: unrelated Expo drift is
-      user-waived; GitHub owns protected CI/review gates.
+- [x] Earlier fixture waiver is superseded by the authorized source repair;
+      GitHub owns protected CI/review gates.
 - [x] Agent-native pack: N/A; no source-of-truth agent rule changed.
 - [x] Agent-native pack: N/A; no agent action changed.
 - [x] Agent-native pack: package skill source and generated mirror are synced;
@@ -251,9 +258,9 @@ Completion Gates:
 | Final live feedback read-back | yes | Re-fetch every surface | Final material-head fetch shows zero actionable P0-P3 and no unresolved thread. |
 | External terminal receipt | yes | Post/read after final versioned push | Blocked until required GitHub `CI` passes; do not issue a false ready receipt. |
 | Deslop | yes | Run bounded cleanup | Removed 19 narrative/redundant comment lines, replaced a boolean flag with a typed callback, and renamed internal helpers. |
-| Agent-native reviewer | no | N/A | No agent workflow changed; direct ownership/mirror/discoverability audit is clean. |
+| Agent-native reviewer | yes | Audit parity | Fixture sync/check remain discoverable; source owner and generated output are correct; focused test and canonical sync pass; no shared skill/rule changes. |
 | Final lint | yes | Run lint | `bun lint` passes across 975 files. |
-| Repository check | yes | Run all applicable lanes | Local owning lanes pass, but required GitHub `CI` fails on waived moving Expo SDK 55 fixture drift: run 36644341283. |
+| Repository check | yes | Run all applicable lanes | Latest bun check exits 0, no waiver; required GitHub CI needs fresh final-head proof. |
 | GitHub delivery | yes | Push, read back, receipt, protected merge | Blocked: required `CI` is failure and review is required; no admin bypass is allowed. |
 | Autoreview | yes | Resolve accepted findings | Branch autoreview is clean; direct P1 audit found no remaining actionable issue. |
 | Goal plan complete | yes | Run goal checker | Blocked until required GitHub `CI`, code-owner approval, receipt, and merge complete. |
@@ -269,10 +276,23 @@ Phase / pass table:
 | Inventory | complete | immutable head, PR source, comments, checks, and recoverable classification recorded | task evidence repair |
 | Repair | complete | recovery commit and task-format body are live; local/fetched/live heads match | feedback and source review |
 | Review/checks | complete | focused/full proof, feedback inventory, no-comments, direct P1 review, and autoreview are clean | delivery |
-| Delivery | blocked | required GitHub `CI` fails on unrelated Expo fixture drift; code-owner approval is also required | separate fixture repair or external rules change |
+| Delivery | pending | local fixture repair verified; final push, fresh GitHub CI and code-owner approval required | final-head protected gates |
 | Closeout | blocked | no receipt or merge while the required context is red | resume after blocker clears |
 
 Verification evidence:
+- Latest `bun check` exits 0 after owner repair and canonical all-fixture sync.
+  Source tests, type tests, CLI tests, Concave smoke, all eight fixture checks,
+  kitcn verify and runtime scenarios pass. No fixture waiver remains. Log
+  `/tmp/pr473-fixed-check.log`.
+- Normalization red-green: 12 pass/2 fail with retained Expo settings before
+  the patch; 14 pass/0 fail and 57 assertions after it. Both scopes preserve
+  AGENTS, other Claude artifacts and non-Expo settings.
+- Incremental autoreview and TruffleHog are clean; no-comments has zero new
+  comment/suppression findings. Deslop found no incremental tooling regression.
+- Pending-merge inspection/cancellation read back `cancelled` at fcbd2f84,
+  base main@3250fb9c, autoMerge=false and queueEntryId=null before final push.
+- Final external actions stay unchecked until actually performed. They do not
+  require a receipt-only branch commit; the PR is their authoritative record.
 - `bun --cwd packages/kitcn build` from the PR worktree passed.
 - `bun --cwd packages/kitcn typecheck` passed.
 - `bun test packages/kitcn/src/auth-start/index.retry.test.ts packages/kitcn/src/react/client.test.ts` failed before the test-isolation fix with two missing-`consistentQuery` errors, then passed with 15 tests.
@@ -345,22 +365,19 @@ Timeline:
 Reboot status:
 | Question | Answer |
 | --- | --- |
-| Where am I? | Local/source closeout is complete; protected GitHub delivery is blocked by the unrelated fixture failure. |
-| Where am I going? | Resume only after a separately scoped fixture repair clears required `CI`, then obtain code-owner approval, bind the receipt, guarded-merge, and confirm landing. |
+| Where am I? | Authorized fixture-owner repair and canonical regeneration complete; full repository gate green. |
+| Where am I going? | Finish checks, commit/push repair, get independent verdict and required CI, bind external receipt, guarded merge only after code-owner approval. |
 | What is the goal? | Merge only a fully recovered and verified PR #473. |
 | What have I learned? | The PR was recoverable. It also needed callback-safe cleanup, admission-time getter reads, public type tightening, docs, and isolated retry mocks. |
 | What have I done? | Repaired source/tests/docs/types, synchronized skills, passed owning proofs and reviews, classified all feedback, and approved the normal fork CI run. |
 
 Open risks:
-- `bun check` is not green because the external Expo template no longer matches
-  committed fixture guidance. The user explicitly waived only that unrelated
-  lane for PR #473; all other gates remain mandatory.
+- Full local bun check passes without a fixture waiver; required final-head
+  GitHub CI and independent Shipping verdict remain to be observed.
 - GitHub reports Vercel failure because the contributor deployment needs
   udecode team authorization. Vercel is not a required ruleset context.
-- Required GitHub `CI` is red at run 36644341283 on the same unrelated Expo
-  fixture drift. The user's waiver closes the local scope decision, not the
-  server-enforced status requirement. Clearing it needs a separate fixture
-  repair or a repository-owner rules change; this run will not bypass it.
+- Required GitHub `CI` at the old head is red. The authorized repair must be
+  pushed and pass a fresh normal fork run. No rules change or bypass applies.
 - The `main` ruleset requires a code-owner approval after the final push. This
   run will not use the account's available bypass.
 
