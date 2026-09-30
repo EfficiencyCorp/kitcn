@@ -601,11 +601,6 @@ function ConvexAuthProviderInner({
     setGuardTripped(true);
   }, [authStore]);
 
-  useEffect(() => {
-    if (isDocumentTripped()) quarantine();
-    return subscribeDocumentTrip(quarantine);
-  }, [quarantine]);
-
   // The provider whose guard refused a token trips the document, closes its
   // client and then runs the app's callback, so a throwing callback cannot
   // keep the old client alive.
@@ -616,6 +611,7 @@ function ConvexAuthProviderInner({
     guard.tripSettled = true;
     quarantine();
     tripDocument();
+    if (!onTokenIdentityChangeRef.current) return;
     try {
       void Promise.resolve(client.close()).catch(() => {});
     } catch {
@@ -631,6 +627,15 @@ function ConvexAuthProviderInner({
   useEffect(() => {
     if (refusedInitialToken) tripGuard();
   }, [refusedInitialToken, tripGuard]);
+
+  // A trip anywhere in the page (another provider, the Start loader) runs the
+  // same steps here once: quarantine, and with `onTokenIdentityChange`, close
+  // this provider's client and call it. A provider mounted after the trip
+  // starts tripped and calls nothing.
+  useEffect(() => {
+    if (isDocumentTripped()) tripGuard();
+    return subscribeDocumentTrip(tripGuard);
+  }, [tripGuard]);
 
   // This provider's identity admission, which the token gate applies to
   // every token cached, published or handed out for this store (the

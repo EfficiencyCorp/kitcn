@@ -2238,8 +2238,9 @@ describe('ConvexAuthProvider', () => {
       // document, so the first provider's hand-out answers null too.
       expect(results).toEqual([null, null]);
       expect(published).not.toContain(tokenForB);
+      // The trip reaches every mounted guarded provider once.
       expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
-      expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+      expect(first.onTokenIdentityChange).toHaveBeenCalledTimes(1);
     });
 
     test('a trip publishes a terminal unauthenticated state that Convex cannot reopen', async () => {
@@ -2871,6 +2872,54 @@ describe('ConvexAuthProvider', () => {
       });
       await flush();
       expect(fresh.result.current.auth.isAuthenticated).toBe(true);
+    });
+
+    test('a trip from the Start loader calls the mounted guarded provider once', async () => {
+      const harness = convexHarness({
+        baseline: 'user_a|session_a',
+        session: 'pending',
+      });
+      await flush();
+
+      await act(async () => {
+        await syncConvexAuthForStartLoader({
+          convex: { clearAuth: () => {}, setAuth: () => {} },
+          getToken: async () => identityJwt('user_b', 'session_b'),
+        });
+      });
+
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      expect(harness.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('a trip calls every mounted guarded provider once, even when one callback throws', async () => {
+      const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const first = convexHarness({
+          initialToken: identityJwt('user_a', 'session_a'),
+          tokens: [identityJwt('user_b', 'session_b')],
+        });
+        const throwing = convexHarness({
+          initialToken: identityJwt('user_a', 'session_a'),
+          onTokenIdentityChange: mock(() => {
+            throw new Error('callback failed');
+          }),
+        });
+        const third = convexHarness({
+          initialToken: identityJwt('user_a', 'session_a'),
+        });
+        await flush();
+        await first.fetch(false);
+
+        expect(await first.fetch(true)).toBeNull();
+
+        for (const harness of [first, throwing, third]) {
+          expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+          expect(harness.close).toHaveBeenCalledTimes(1);
+        }
+      } finally {
+        consoleError.mockRestore();
+      }
     });
 
     test('a throwing onTokenIdentityChange still closes the client', async () => {

@@ -18,7 +18,14 @@ export const isDocumentTripped = () => tripped;
 export const tripDocument = () => {
   if (!inBrowser() || tripped) return;
   tripped = true;
-  for (const listener of [...listeners]) listener();
+  for (const listener of [...listeners]) {
+    try {
+      listener();
+    } catch (error) {
+      // One subscriber failing must not stop the others.
+      console.error('[kitcn] identity guard trip listener threw', error);
+    }
+  }
 };
 
 export const subscribeDocumentTrip = (listener: () => void) => {
