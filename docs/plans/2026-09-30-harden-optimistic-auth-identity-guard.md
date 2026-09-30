@@ -506,8 +506,8 @@ Review fixes:
     getter's current answer (identity-less JWTs refused once any is bound);
     `onTokenIdentityAdmitted`; the trip again. A refused JWT trips the page.
     Mounted providers live in the registry (added in a layout effect,
-    removed at unmount); each commit reconciles every held token against the
-    page. `identity-guard-trip.ts` is folded into the registry module.
+    removed at unmount); held tokens are reconciled against the page when
+    a guard joins it and at every admission. `identity-guard-trip.ts` is folded into the registry module.
     Tests: `a later SSR token must match both its baseline and the page
     identity`; `providers mounted together with SSR tokens of two
     identities trip the page`; `a trip inside onTokenIdentityAdmitted at a
@@ -530,17 +530,70 @@ Review fixes:
     goes to the exchange, never to Convex`.
   - Net non-test `src` delta: +386 / -441 (net -55); the provider lost 129
     lines.
+- Round H3 (Codex lanes: adversarial and spec on eeda2dae), one commit
+  (eaefa418). Red log `kitcn-1596-bodies/k-red.log`: 8 source tests fail
+  before the fix. The built cases were not shown red against a build of
+  the prior source (the attempt was abandoned; see Error attempts); their
+  source twins were red.
+  - K1 fixed, behavioural: the HTTP token source admits after the app
+    headers load (both the fetcher and the store-token branch) and marks the
+    headers with a recheck that `executeHttpRequest` runs synchronously
+    right before dispatch, after per-call headers load; refused, the
+    `Authorization` is dropped. Tests `the store-token fallback admits after
+    the app headers load`; `no kitcn token is sent when the page trips while
+    per-call headers load`; built `kitcn/react HTTP sends no kitcn token once
+    the page trips while per-call headers load`.
+  - K2 fixed, behavioural: auth-state publication admits the held token
+    (`hold`) before the optimistic window and expiry checks. Tests `a
+    foreign token seeded after Convex confirmed trips and never publishes
+    authenticated`; `an expired foreign token seeded into the store trips
+    the page`.
+  - K3 fixed, behavioural: a fixed baseline is captured on the first
+    render; only a getter is read live. Test `a fixed baseline is read on
+    the first render only`.
+  - K4 fixed, wording: held tokens are reconciled when a guard joins the
+    page and at every admission (registry JSDoc, provider comment, docs,
+    skill, body, this plan). No per-commit reconciliation added.
+  - K5 fixed, behavioural: `identityGuardInPlay` (guarded provider, mounted
+    guarded sibling, or a bound identity) gates structural classification;
+    without it cached-token routing is by `exp` exactly as at fcbd2f84.
+    Tests `with no guarded provider, a cached opaque credential is handed
+    out as before`; `with a guard, a cached opaque credential is exchanged,
+    whatever the session state`; built `a cached opaque credential in
+    kitcn/auth/client: direct with no guard, exchanged with one`.
+  - K6 fixed, behavioural: key `kitcn.identityGuard.v2`, shape validated;
+    another shape under it is never used (a local stand-in, a console
+    warning, guarded admissions fail closed). Test `an incompatible
+    registry under the key fails guarded admissions closed`.
+  - K7 fixed, wording: JSDoc, `client.mdx`, skill and mirror, body state
+    that an unguarded provider is bound by the page identity only when a
+    guarded provider shares the page.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
 |------------------------|-------|---------------------|------------|
-| None | 0 | N/A | N/A |
+| Built red for round H3: a chained shell command meant to stash the fix, build and restore failed on zsh word splitting; its fallback `git checkout` reverted the uncommitted registry edits and `git stash pop` applied an unrelated stash (feat/crpc-optimistic-update split-B) into this worktree | 1 | Re-applied the registry edits; no chained stash moves | Registry restored and re-verified; the popped stash's two untracked files remain in this worktree, byte-identical to dangling stash commit 7ae5df22 (restoring the stash entry and deleting the files is left to the requester) |
 
 Verification evidence:
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
   outside the repo.
-- Current (Bun 1.3.9, HEAD 7d3a9d6d plus this plan):
+- Current (Bun 1.3.9, HEAD eaefa418 plus this plan):
+  - `bun run build` (packages/kitcn): exit 0.
+  - Focused (provider 110, context 13, auth-mutations 11, use-query-options
+    24, client 14, auth-start retry 1): 173 pass, 0 fail, 0 `act` warnings.
+  - Built-entrypoint integration (`identity-guard.entrypoints` 7,
+    `package-entrypoints` 1): 8 pass, 0 fail.
+  - `bun lint:fix`: 979 files, no fixes applied; `bun lint` exit 0.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint, typecheck, `test:bun` 1547 pass / 0 fail (155
+    files), `test:vitest` 1053 pass / 14 skipped, no type errors,
+    `test:cli` 124 pass / 0 fail, Concave smoke.
+  - `test:verify`: exit 0.
+  - `client.mdx` compiles; skill mirror synced.
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Round H2 snapshot (Bun 1.3.9, HEAD 7d3a9d6d plus this plan):
   - `bun run build` (packages/kitcn): exit 0.
   - Focused (provider 104, context 11, auth-mutations 11, use-query-options
     24, client 14, auth-start retry 1): 165 pass, 0 fail, 0 `act` warnings.
@@ -612,7 +665,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: 38 tests fail at #473's head; browser N/A
-  - Verified: focused 165 pass, built-entrypoint 6 pass, `test:bun` 1537/0; browser N/A
+  - Verified: focused 173 pass, built-entrypoint 8 pass, `test:bun` 1547/0; browser N/A
 - Browser check: N/A.
 - Outcome: the identity guard and optimistic gate hold their documented guarantees.
 - Caveat: fixture drift; `test:runtime` not run locally; autoreview blocked.
@@ -657,6 +710,8 @@ Timeline:
   (38 fail); gates run; plan closed as blocked on the pre-existing gate.
 - 2026-09-30 Round H1 (309f876b, 6346b55d, fc43523e, 3cb36826).
 - 2026-09-30 Round H2: one admission in the registry (7d3a9d6d).
+- 2026-09-30 Round H3: admission at send and before publication, fixed
+  baselines, guarded-only opaque routing, registry key v2 (eaefa418).
 
 Reboot status:
 | Question | Answer |
