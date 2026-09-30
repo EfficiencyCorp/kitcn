@@ -529,8 +529,11 @@ For multiple provider mounts in one document, pass the shared identity as
 SSR token, fresh and cached tokens, sign-in tokens, HTTP headers and the Start
 loader) holds a token to the page identity (the first one a provider knew),
 the provider's own baseline, and the current answer of every mounted
-provider's getter. A provider that mounts with an SSR token of another
-identity trips the page. Use `onTokenIdentityAdmitted` to observe admitted
+provider's getter. Held tokens are reconciled when a provider joins the page
+and at every admission, so a provider that mounts with an SSR token of
+another identity trips the page. A provider without `onTokenIdentityChange`
+is bound by the page identity too when a guarded provider shares the page;
+with no guarded provider on the page, nothing changes. Use `onTokenIdentityAdmitted` to observe admitted
 tokens and update the shared document identity.
 
 ## Auth Flow

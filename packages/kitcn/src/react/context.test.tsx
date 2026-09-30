@@ -1,6 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
+import { executeHttpRequest } from '../crpc/http-client';
+import { getTransformer } from '../crpc/transformer';
 import * as authStoreModule from './auth-store';
 import {
   createCRPCContext,
@@ -262,6 +264,114 @@ describe('createCRPCContext', () => {
       releaseHeaders({ 'x-app': '1' });
 
       expect(await pending).toEqual({ 'x-app': '1' });
+    } finally {
+      resetDocumentTripForTests();
+      createHttpProxySpy.mockRestore();
+    }
+  });
+
+  test('the store-token fallback admits after the app headers load', async () => {
+    const createHttpProxySpy = spyOn(
+      httpProxyModule,
+      'createHttpProxy'
+    ).mockReturnValue({} as any);
+    useAuthStoreSpy.mockImplementation(
+      () =>
+        ({
+          get: (key: string) =>
+            key === 'token'
+              ? 'token-a'
+              : key === 'expiresAt'
+                ? Date.now() + 3_600_000
+                : null,
+        }) as any
+    );
+    let releaseHeaders!: (headers: Record<string, string>) => void;
+    const appHeaders = () =>
+      new Promise<Record<string, string>>((resolve) => {
+        releaseHeaders = resolve;
+      });
+    const api = {
+      _http: { 'todos.get': { method: 'GET', path: '/todos/:id' } },
+    } as any;
+
+    try {
+      const { CRPCProvider, useCRPC } = createCRPCContext({
+        api,
+        convexSiteUrl: 'https://example.convex.site',
+        headers: appHeaders,
+      });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <CRPCProvider convexClient={{} as any} convexQueryClient={{} as any}>
+          {children}
+        </CRPCProvider>
+      );
+      renderHook(() => useCRPC(), { wrapper });
+      const headers = createHttpProxySpy.mock.calls[0]?.[0]
+        ?.headers as () => Promise<Record<string, string>>;
+
+      const pending = headers();
+      await new Promise((r) => setTimeout(r, 0));
+      tripDocument();
+      releaseHeaders({ 'x-app': '1' });
+
+      expect(await pending).toEqual({ 'x-app': '1' });
+    } finally {
+      resetDocumentTripForTests();
+      createHttpProxySpy.mockRestore();
+    }
+  });
+
+  test('no kitcn token is sent when the page trips while per-call headers load', async () => {
+    const createHttpProxySpy = spyOn(
+      httpProxyModule,
+      'createHttpProxy'
+    ).mockReturnValue({} as any);
+    const fetchAccessToken = mock(async () => 'token-a');
+    useFetchAccessTokenSpy.mockImplementation(() => fetchAccessToken as any);
+    const api = {
+      _http: { 'todos.get': { method: 'GET', path: '/todos/:id' } },
+    } as any;
+
+    try {
+      const { CRPCProvider, useCRPC } = createCRPCContext({
+        api,
+        convexSiteUrl: 'https://example.convex.site',
+      });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <CRPCProvider convexClient={{} as any} convexQueryClient={{} as any}>
+          {children}
+        </CRPCProvider>
+      );
+      renderHook(() => useCRPC(), { wrapper });
+      const baseHeaders = createHttpProxySpy.mock.calls[0]?.[0]
+        ?.headers as () => Promise<Record<string, string>>;
+
+      let releaseCallHeaders!: (headers: Record<string, string>) => void;
+      const sent: Array<Record<string, string>> = [];
+      const request = executeHttpRequest({
+        args: {
+          headers: () =>
+            new Promise<Record<string, string>>((resolve) => {
+              releaseCallHeaders = resolve;
+            }),
+        },
+        baseFetch: (async (_url: string, init: RequestInit) => {
+          sent.push(init.headers as Record<string, string>);
+          return new Response('{}', { status: 200 });
+        }) as typeof fetch,
+        baseHeaders,
+        convexSiteUrl: 'https://example.convex.site',
+        procedureName: 'todos.get',
+        route: { method: 'GET', path: '/todos' },
+        transformer: getTransformer(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      tripDocument();
+      releaseCallHeaders({ 'x-call': '1' });
+      await request;
+
+      expect(sent).toEqual([{ 'x-call': '1' }]);
     } finally {
       resetDocumentTripForTests();
       createHttpProxySpy.mockRestore();

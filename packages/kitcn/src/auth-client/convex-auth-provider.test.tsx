@@ -1998,6 +1998,7 @@ describe('ConvexAuthProvider', () => {
     const convexHarness = ({
       authClientExtras = {},
       baseline,
+      baselineHolder,
       convex = makeConvexClient(),
       extraHook = () => null,
       guard = true,
@@ -2013,6 +2014,8 @@ describe('ConvexAuthProvider', () => {
     }: {
       authClientExtras?: Record<string, unknown>;
       baseline?: string | null | (() => string | null);
+      /** A baseline prop the test changes; rerender the harness after. */
+      baselineHolder?: { current: string | null };
       convex?: Pick<
         ReturnType<typeof makeConvexClient>,
         'bindings' | 'client' | 'close'
@@ -2068,7 +2071,9 @@ describe('ConvexAuthProvider', () => {
           onTokenIdentityAdmitted={onTokenIdentityAdmitted}
           onTokenIdentityChange={guard ? onTokenIdentityChange : undefined}
           optimisticAuth={optimisticAuth}
-          tokenIdentityBaseline={baseline}
+          tokenIdentityBaseline={
+            baselineHolder ? baselineHolder.current : baseline
+          }
         >
           {children}
         </ConvexAuthProvider>
@@ -3639,6 +3644,132 @@ describe('ConvexAuthProvider', () => {
           expect(isClientSettled(client)).toBe(false);
           expect(isDocumentTripped()).toBe(false);
         });
+      });
+    });
+
+    describe('publication, fixed baselines, opaque routing, registry shape', () => {
+      const opaqueWithExp = () =>
+        `opaque.${btoa(
+          JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })
+        )}`;
+
+      test('a foreign token seeded after Convex confirmed trips and never publishes authenticated', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const harness = convexHarness({ tokens: [tokenForA] });
+        await flush();
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        await harness.report(true);
+        expect(harness.result.current.auth.isAuthenticated).toBe(true);
+
+        await act(async () => {
+          harness.result.current.store.set(
+            'token',
+            identityJwt('user_b', 'session_b')
+          );
+        });
+
+        expect(harness.result.current.auth.isAuthenticated).toBe(false);
+        expect(isDocumentTripped()).toBe(true);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
+      test('an expired foreign token seeded into the store trips the page', async () => {
+        const harness = convexHarness({ baseline: 'user_a|session_a' });
+        await flush();
+
+        await act(async () => {
+          harness.result.current.store.set(
+            'token',
+            identityJwt('user_b', 'session_b', -60)
+          );
+        });
+
+        expect(harness.result.current.auth.isAuthenticated).toBe(false);
+        expect(isDocumentTripped()).toBe(true);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
+      test('a fixed baseline is read on the first render only', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        const baselineHolder = { current: 'user_a|session_a' as string | null };
+        const harness = convexHarness({ baselineHolder, tokens: [tokenForA] });
+        await flush();
+        expect(await harness.fetch(false)).toBe(tokenForA);
+
+        baselineHolder.current = 'user_b|session_b';
+        harness.rerender();
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(tokenForA);
+        expect(isDocumentTripped()).toBe(false);
+        expect(harness.onTokenIdentityChange).not.toHaveBeenCalled();
+      });
+
+      test('with no guarded provider, a cached opaque credential is handed out as before', async () => {
+        const opaque = opaqueWithExp();
+        const harness = convexHarness({
+          guard: false,
+          initialToken: opaque,
+          session: 'pending',
+          tokens: [identityJwt('user_a', 'session_a')],
+        });
+        await flush();
+
+        expect(await harness.fetch(false)).toBe(opaque);
+        expect(harness.convexToken).not.toHaveBeenCalled();
+      });
+
+      test('with a guard, a cached opaque credential is exchanged, whatever the session state', async () => {
+        const tokenForA = identityJwt('user_a', 'session_a');
+        for (const session of ['active', 'pending'] as const) {
+          const opaque = opaqueWithExp();
+          const harness = convexHarness({
+            initialToken: opaque,
+            session,
+            tokens: [tokenForA],
+          });
+          await flush();
+
+          expect(await harness.fetch(false)).toBe(tokenForA);
+          expect(harness.convexToken).toHaveBeenCalledTimes(1);
+          expect(
+            (harness.convexToken.mock.calls[0] as any)[0].fetchOptions.headers
+          ).toEqual({ Authorization: `Bearer ${opaque}` });
+          harness.unmount();
+          resetDocumentTripForTests();
+        }
+      });
+
+      test('an incompatible registry under the key fails guarded admissions closed', async () => {
+        const key = Symbol.for('kitcn.identityGuard.v2');
+        const scope = globalThis as unknown as Record<symbol, unknown>;
+        const saved = scope[key];
+        scope[key] = {
+          admissions: new WeakMap(),
+          documentIdentity: null,
+          identitySources: new Set(),
+          settledClients: new WeakSet(),
+          settlementListeners: new WeakMap(),
+          tripListeners: new Set(),
+          tripped: false,
+          watchedClients: new WeakSet(),
+        };
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          const harness = convexHarness({
+            tokens: [identityJwt('user_a', 'session_a')],
+          });
+          await flush();
+
+          expect(await harness.fetch(false)).toBeNull();
+          expect(harness.result.current.store.get('token')).toBeNull();
+          expect(warn).toHaveBeenCalled();
+          harness.unmount();
+        } finally {
+          warn.mockRestore();
+          if (saved === undefined) delete scope[key];
+          else scope[key] = saved;
+        }
       });
     });
 

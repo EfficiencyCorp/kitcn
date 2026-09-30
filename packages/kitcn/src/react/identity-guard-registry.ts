@@ -41,6 +41,11 @@ export type IdentityGuard = {
 export type TokenUse = 'handout' | 'hold' | 'restore';
 
 type PageRegistry = {
+  /**
+   * Set only on a local stand-in for a registry of another shape found under
+   * the key (mixed kitcn revisions, dev HMR): guarded admissions fail closed.
+   */
+  incompatible?: true;
   /** A token of another identity was refused somewhere in the page. */
   tripped: boolean;
   tripListeners: Set<() => void>;
@@ -57,26 +62,59 @@ type PageRegistry = {
   watchedClients: WeakSet<object>;
 };
 
-const REGISTRY_KEY = Symbol.for('kitcn.identityGuard.v1');
+// Bump the key on any change to the registry's shape: copies of kitcn from
+// different revisions in one page (dev HMR, mixed bundles) must never share
+// an object they read differently.
+const REGISTRY_KEY = Symbol.for('kitcn.identityGuard.v2');
 
-/** The page state, or null on the server, where it is never created. */
+const createRegistry = (): PageRegistry => ({
+  documentIdentity: null,
+  guards: new Set(),
+  settledClients: new WeakSet(),
+  settlementListeners: new WeakMap(),
+  storeGuards: new WeakMap(),
+  tripListeners: new Set(),
+  tripped: false,
+  watchedClients: new WeakSet(),
+});
+
+const isRegistry = (value: unknown): value is PageRegistry => {
+  const candidate = value as Partial<PageRegistry> | null;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    typeof candidate.tripped === 'boolean' &&
+    (candidate.documentIdentity === null ||
+      typeof candidate.documentIdentity === 'string') &&
+    candidate.tripListeners instanceof Set &&
+    candidate.guards instanceof Set &&
+    candidate.storeGuards instanceof WeakMap &&
+    candidate.settledClients instanceof WeakSet &&
+    candidate.settlementListeners instanceof WeakMap &&
+    candidate.watchedClients instanceof WeakSet
+  );
+};
+
+let incompatibleStandIn: PageRegistry | undefined;
+
+/**
+ * The page state, or null on the server, where it is never created. An
+ * object of another shape under the key is never used: this copy of kitcn
+ * gets a local stand-in on which guarded admissions fail closed.
+ */
 export const pageRegistry = (): PageRegistry | null => {
   if (typeof window === 'undefined') return null;
-  const scope = globalThis as unknown as Record<
-    symbol,
-    PageRegistry | undefined
-  >;
-  scope[REGISTRY_KEY] ??= {
-    documentIdentity: null,
-    guards: new Set(),
-    settledClients: new WeakSet(),
-    settlementListeners: new WeakMap(),
-    storeGuards: new WeakMap(),
-    tripListeners: new Set(),
-    tripped: false,
-    watchedClients: new WeakSet(),
-  };
-  return scope[REGISTRY_KEY];
+  const scope = globalThis as unknown as Record<symbol, unknown>;
+  scope[REGISTRY_KEY] ??= createRegistry();
+  const found = scope[REGISTRY_KEY];
+  if (isRegistry(found)) return found;
+  if (!incompatibleStandIn) {
+    console.warn(
+      '[kitcn] identity guard state of another kitcn revision is on this page; guarded providers hand out no token until the page reloads.'
+    );
+    incompatibleStandIn = { ...createRegistry(), incompatible: true };
+  }
+  return incompatibleStandIn;
 };
 
 export const isDocumentTripped = () => pageRegistry()?.tripped ?? false;
@@ -121,10 +159,12 @@ export const storeGuard = (store: object | undefined) =>
   store ? pageRegistry()?.storeGuards.get(store) : undefined;
 
 /**
- * Called when a provider commits (a render React discards records nothing):
- * its known identity becomes the page's if none is recorded, its getter binds
- * every admission until it unmounts, and the tokens every mounted store
- * already holds are reconciled against the page (a mismatch trips it).
+ * Called when a provider joins the page (its first commit; a render React
+ * discards records nothing): its known identity becomes the page's if none is
+ * recorded, its getter binds every admission until it unmounts, and the
+ * tokens every mounted store already holds are reconciled against the page (a
+ * mismatch trips it). After that, held tokens are reconciled at every
+ * admission.
  */
 export const mountGuard = (guard: IdentityGuard) => {
   const registry = pageRegistry();
@@ -160,6 +200,16 @@ const boundIdentities = (guard: IdentityGuard | undefined) => {
   return bound.filter((identity): identity is string => identity !== null);
 };
 
+/**
+ * Whether an identity guard is in play for `guard`'s tokens: it is guarded, a
+ * guarded provider is mounted, or an identity binds the page. With none, the
+ * page behaves as if the guard did not exist.
+ */
+export const identityGuardInPlay = (guard: IdentityGuard | undefined) =>
+  !!guard?.guarded ||
+  boundIdentities(guard).length > 0 ||
+  [...(pageRegistry()?.guards ?? [])].some((mounted) => mounted.guarded);
+
 /** Whether `token` would be admitted now. No trip, no record, no callback. */
 export const isTokenAdmissible = (
   token: string,
@@ -167,11 +217,12 @@ export const isTokenAdmissible = (
   use: TokenUse
 ) => {
   if (isDocumentTripped() || guard?.tripped) return false;
+  if (guard?.guarded && pageRegistry()?.incompatible) return false;
   const bound = boundIdentities(guard);
   if (!isJwt(token)) {
     if (use === 'hold') return true;
     if (use === 'restore') return bound.length === 0;
-    return !guard?.guarded && bound.length === 0;
+    return !identityGuardInPlay(guard);
   }
   const identity = decodeTokenSubjectSessionIdentity(token);
   // A JWT without an identity cannot prove the established one.

@@ -41,6 +41,7 @@ import {
   attachStoreGuard,
   decodeTokenSubjectSessionIdentity,
   type IdentityGuard,
+  identityGuardInPlay,
   isDocumentTripped,
   isJwt,
   isTokenAdmissible,
@@ -148,7 +149,9 @@ export type ConvexAuthProviderProps = {
    * mutations fail with `AuthMutationError` code `TOKEN_IDENTITY_CHANGED`
    * until the reload. It governs the token kitcn supplies, not an
    * `Authorization` header the app sets itself. Same-session refreshes pass
-   * through. Off when not set.
+   * through. Off when not set: with no guarded provider on the page nothing
+   * changes, while a provider without it is still bound by the page identity
+   * when a guarded provider shares the page.
    */
   onTokenIdentityChange?: () => void;
   /**
@@ -442,14 +445,18 @@ export function ConvexAuthProvider({
   const [{ guard, inheritedTrip, refusedInitialToken }] = useState(() => {
     const guarded = onTokenIdentityChange !== undefined;
     const getter = typeof tokenIdentityBaseline === 'function';
+    // A fixed baseline is read on this first render only; a getter is read
+    // at every admission.
+    const fixed = guarded && !getter ? (tokenIdentityBaseline ?? null) : null;
     const created: IdentityGuard = {
       baseline: () =>
-        guarded ? resolveTokenIdentityBaseline(baselineRef.current) : null,
+        guarded && getter
+          ? resolveTokenIdentityBaseline(baselineRef.current)
+          : fixed,
       guarded,
       hasGetter: guarded && getter,
       heldToken: () => null,
-      // A fixed baseline seeds the identity; a getter is read at admission.
-      identity: guarded && !getter ? (tokenIdentityBaseline ?? null) : null,
+      identity: fixed,
       onAdmitted: (token) => onAdmittedRef.current?.(token),
       tripped: isDocumentTripped(),
     };
@@ -547,11 +554,18 @@ function ConvexAuthProviderInner({
   sessionRef.current = session;
   isPendingRef.current = isPending;
 
+  // With an identity guard in play, a cached token is classified by
+  // structure: an opaque session token is the exchange credential even when
+  // it decodes an `exp`. With none, classification is by `exp` alone.
+  const isOpaqueUnderGuard = useCallback(
+    (token: string) => identityGuardInPlay(guard) && !isJwt(token),
+    [guard]
+  );
+
   const getCachedJwt = useCallback(
     (minTimeRemainingMs = 0) => {
       const cachedToken = authStore.get('token');
-      // An opaque session token is the exchange credential, never a JWT.
-      if (!cachedToken || !isJwt(cachedToken)) {
+      if (!cachedToken || isOpaqueUnderGuard(cachedToken)) {
         return null;
       }
 
@@ -562,7 +576,7 @@ function ConvexAuthProviderInner({
 
       return cachedToken;
     },
-    [authStore]
+    [authStore, isOpaqueUnderGuard]
   );
 
   // Clear token when session becomes null (logout)
@@ -635,9 +649,10 @@ function ConvexAuthProviderInner({
     }
   }, [client, guard, quarantine]);
 
-  // On commit, before any passive effect hands Convex a fetcher: hear trips,
-  // then join the page (its identity, its getter, and the reconciliation of
-  // every held token against it). A refused SSR token trips the page here.
+  // On joining the page, before any passive effect hands Convex a fetcher:
+  // hear trips, then register (its identity, its getter) and reconcile every
+  // held token against the page; after that, held tokens are reconciled at
+  // every admission. A refused SSR token trips the page here.
   useLayoutEffect(() => {
     guard.heldToken = () => authStore.get('token');
     const unsubscribe = subscribeDocumentTrip(tripGuard);
@@ -763,10 +778,10 @@ function ConvexAuthProviderInner({
         } = {
           throw: false,
         };
-        // A cached token that is not a usable JWT is the exchange credential.
         if (
           cachedToken &&
-          (!isJwt(cachedToken) || decodeJwtExp(cachedToken) === null)
+          (decodeJwtExp(cachedToken) === null ||
+            isOpaqueUnderGuard(cachedToken))
         ) {
           fetchOptions.credentials = 'omit';
           fetchOptions.headers = {
@@ -897,7 +912,8 @@ function ConvexAuthProviderInner({
         !forceRefreshToken &&
         cachedToken &&
         expiresAt &&
-        timeRemaining >= 60_000
+        timeRemaining >= 60_000 &&
+        !isOpaqueUnderGuard(cachedToken)
       ) {
         return cachedToken;
       }
@@ -914,7 +930,7 @@ function ConvexAuthProviderInner({
     },
     // Stable deps - authStore/authClient rarely change
     // session/isPending accessed via refs to prevent callback recreation
-    [authStore, authClient, getCachedJwt]
+    [authStore, authClient, getCachedJwt, isOpaqueUnderGuard]
   );
 
   // Every token consumer (Convex, HTTP headers) goes through this. No
@@ -1009,7 +1025,7 @@ function AuthStateSync({
     // descendant effect earlier in this commit may have changed any of them.
     const gate = resolveAuthGate({
       admitHeldToken: (held) =>
-        admitStoreToken(authStore, held, { use: 'handout' }),
+        admitStoreToken(authStore, held, { use: 'hold' }),
       convexIsLoading,
       guardTripped: guardTripped || isDocumentTripped(),
       isAuthenticated,
@@ -1043,7 +1059,7 @@ function resolveTokenIdentityBaseline(
 }
 
 type AuthGateInput = {
-  /** The one admission, for the held token the optimistic gate would use. */
+  /** The one admission, for the held token, whatever the window or `exp`. */
   admitHeldToken: (token: string) => boolean;
   convexIsLoading: boolean;
   guardTripped: boolean;
@@ -1074,15 +1090,16 @@ function resolveAuthGate({
   token,
 }: AuthGateInput): { isAuthenticated: boolean; isLoading: boolean } {
   // A tripped identity guard is terminal: unauthenticated, whatever Convex says.
-  if (guardTripped) {
+  // A held token the guard refuses (which trips the page) is never
+  // published as authenticated, settled or not, expired or not.
+  if (guardTripped || (token !== null && !admitHeldToken(token))) {
     return { isAuthenticated: false, isLoading: false };
   }
   if (
     optimisticWindow &&
     convexIsLoading &&
     token !== null &&
-    isOptimisticToken(token) &&
-    admitHeldToken(token)
+    isOptimisticToken(token)
   ) {
     return { isAuthenticated: true, isLoading: false };
   }

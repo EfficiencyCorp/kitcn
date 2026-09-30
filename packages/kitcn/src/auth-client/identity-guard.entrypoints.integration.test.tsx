@@ -1,11 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { ConvexAuthProvider } from 'kitcn/auth/client';
 import { syncConvexAuthForStartLoader } from 'kitcn/auth/start';
-import { useAuth } from 'kitcn/react';
+import { createCRPCContext, useAuth } from 'kitcn/react';
 import type { ReactNode } from 'react';
 import {
   isDocumentTripped,
   resetDocumentTripForTests,
+  tripDocument,
 } from '../react/identity-guard-registry';
 
 // Built entries: `kitcn/auth/start` is bundled apart from `kitcn/auth/client`
@@ -27,6 +28,7 @@ type FetchToken = (args: {
 const mountProvider = ({
   baseline,
   client,
+  guard = true,
   initialToken,
   optimisticAuth = false,
   session = 'active',
@@ -34,6 +36,7 @@ const mountProvider = ({
 }: {
   baseline?: string | (() => string | null);
   client: { setAuth: (fetchToken: FetchToken) => void };
+  guard?: boolean;
   initialToken?: string;
   optimisticAuth?: boolean;
   session?: 'active' | 'pending';
@@ -41,8 +44,11 @@ const mountProvider = ({
 }) => {
   const queue = [...tokens];
   const onTokenIdentityChange = mock(() => {});
+  const exchange = mock(async (_options: unknown) => ({
+    data: { token: queue.shift() ?? null },
+  }));
   const authClient = {
-    convex: { token: async () => ({ data: { token: queue.shift() ?? null } }) },
+    convex: { token: exchange },
     crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
     getSession: async () => null,
     updateSession: () => {},
@@ -59,14 +65,18 @@ const mountProvider = ({
       authClient={authClient as never}
       client={client as never}
       initialToken={initialToken}
-      onTokenIdentityChange={onTokenIdentityChange}
+      onTokenIdentityChange={guard ? onTokenIdentityChange : undefined}
       optimisticAuth={optimisticAuth}
       tokenIdentityBaseline={baseline}
     >
       {children}
     </ConvexAuthProvider>
   );
-  return { onTokenIdentityChange, ...renderHook(() => useAuth(), { wrapper }) };
+  return {
+    exchange,
+    onTokenIdentityChange,
+    ...renderHook(() => useAuth(), { wrapper }),
+  };
 };
 
 const makeClient = () => {
@@ -216,5 +226,115 @@ describe('identity guard across built entrypoints', () => {
       });
       expect(handed).toBeNull();
     }
+  });
+
+  test('kitcn/react HTTP sends no kitcn token once the page trips while per-call headers load', async () => {
+    const tokenForA = identityJwt('user_a', 'session_a');
+    const sent: Array<Record<string, string>> = [];
+    const { CRPCProvider, useCRPC } = createCRPCContext({
+      api: {
+        _http: { 'todos.get': { method: 'GET', path: '/todos' } },
+      } as never,
+      convexSiteUrl: 'https://example.convex.site',
+      fetch: (async (_url: string, init: RequestInit) => {
+        sent.push(init.headers as Record<string, string>);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch,
+    });
+    const { client } = makeClient();
+    const queue = [tokenForA];
+    const authClient = {
+      convex: {
+        token: async () => ({ data: { token: queue.shift() ?? tokenForA } }),
+      },
+      crossDomain: { oneTimeToken: { verify: async () => ({ data: {} }) } },
+      getSession: async () => null,
+      updateSession: () => {},
+      useSession: () => ({
+        data: { session: { id: 's' }, user: { id: 'u' } },
+        isPending: false,
+      }),
+    };
+    const onTokenIdentityChange = mock(() => {});
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ConvexAuthProvider
+        authClient={authClient as never}
+        client={client as never}
+        onTokenIdentityChange={onTokenIdentityChange}
+      >
+        <CRPCProvider
+          convexClient={client as never}
+          convexQueryClient={{ resetAuthQueries: async () => {} } as never}
+        >
+          {children}
+        </CRPCProvider>
+      </ConvexAuthProvider>
+    );
+    const { result } = renderHook(() => useCRPC() as any, { wrapper });
+    await flush();
+
+    await act(async () => {
+      await result.current.http.todos.get.query({});
+    });
+    expect(sent.at(-1)?.Authorization).toBe(`Bearer ${tokenForA}`);
+
+    let release!: (headers: Record<string, string>) => void;
+    let request!: Promise<unknown>;
+    await act(async () => {
+      request = result.current.http.todos.get.query({
+        headers: () =>
+          new Promise<Record<string, string>>((resolve) => {
+            release = resolve;
+          }),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await act(async () => {
+      tripDocument();
+      release({ 'x-call': '1' });
+      await request;
+    });
+
+    expect(sent.at(-1)).toEqual({ 'x-call': '1' });
+    expect(onTokenIdentityChange).toHaveBeenCalledTimes(1);
+  });
+
+  test('a cached opaque credential in kitcn/auth/client: direct with no guard, exchanged with one', async () => {
+    const opaque = `opaque.${btoa(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })
+    )}`;
+    const tokenForA = identityJwt('user_a', 'session_a');
+
+    const plain = makeClient();
+    const unguarded = mountProvider({
+      client: plain.client,
+      guard: false,
+      initialToken: opaque,
+      session: 'pending',
+      tokens: [tokenForA],
+    });
+    await flush();
+    let handed: string | null = null;
+    await act(async () => {
+      handed = await plain.fetchers.at(-1)!({ forceRefreshToken: false });
+    });
+    expect(handed).toBe(opaque);
+    expect(unguarded.exchange).not.toHaveBeenCalled();
+    unguarded.unmount();
+
+    const guardedClient = makeClient();
+    const guarded = mountProvider({
+      client: guardedClient.client,
+      initialToken: opaque,
+      tokens: [tokenForA],
+    });
+    await flush();
+    await act(async () => {
+      handed = await guardedClient.fetchers.at(-1)!({
+        forceRefreshToken: false,
+      });
+    });
+    expect(handed).toBe(tokenForA);
+    expect(guarded.exchange).toHaveBeenCalledTimes(1);
   });
 });
