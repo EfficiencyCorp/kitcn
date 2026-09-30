@@ -3331,6 +3331,40 @@ describe('ConvexAuthProvider', () => {
       expect(second.onTokenIdentityChange).toHaveBeenCalledTimes(1);
     });
 
+    test('auth-state publication reads the held token at the write', async () => {
+      const first = makeJwt(3600);
+      const second = makeJwt(3500);
+      const published: boolean[] = [];
+      const useClearOnSecondToken = () => {
+        const store = useAuthStore();
+        const token = useAuthValue('token');
+        useEffect(() => {
+          if (token !== second) return;
+          store.set('token', null);
+          store.set('expiresAt', null);
+          store.set('isAuthenticated', false);
+          return store.subscribe('isAuthenticated', (value: boolean) =>
+            published.push(value)
+          );
+        }, [store, token]);
+      };
+      const harness = convexHarness({
+        extraHook: useClearOnSecondToken,
+        guard: false,
+        initialToken: first,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+
+      await act(async () => {
+        harness.result.current.store.set('token', second);
+      });
+      await flush();
+
+      expect(published).not.toContain(true);
+    });
+
     test('an identity recorded in an abandoned render does not quarantine the page', async () => {
       const never = new Promise<never>(() => {});
       const Suspender = () => {
@@ -3370,6 +3404,34 @@ describe('ConvexAuthProvider', () => {
 
       expect(state).toEqual({ isAuthenticated: true, token: tokenForB });
       expect(isDocumentTripped()).toBe(false);
+    });
+
+    test('a trip inside onTokenIdentityAdmitted leaves no token in the store', async () => {
+      const harness = convexHarness({
+        onTokenIdentityAdmitted: () => tripDocument(),
+        tokens: [identityJwt('user_a', 'session_a')],
+      });
+      await flush();
+
+      expect(await harness.fetch(false)).toBeNull();
+      expect(harness.result.current.store.get('token')).toBeNull();
+    });
+
+    test('a token that is not a JWT never opens the optimistic gate, whatever its payload', async () => {
+      const payload = btoa(
+        JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })
+      );
+      for (const token of [`opaque.${payload}`, `a.${payload}.b.c`]) {
+        const harness = convexHarness({
+          guard: false,
+          initialToken: token,
+          optimisticAuth: true,
+          session: 'pending',
+        });
+        await flush();
+        expect(harness.result.current.auth.isAuthenticated).toBe(false);
+        harness.unmount();
+      }
     });
 
     test('a remount with a fresh client cannot reopen the document after a trip', async () => {

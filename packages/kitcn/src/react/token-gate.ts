@@ -52,6 +52,9 @@ export const publishToken = (
   }: { announce: boolean; sessionSyncGraceUntil?: number | null }
 ) => {
   if (!admitToken(authStore, token, { announce })) return false;
+  // `onTokenIdentityAdmitted` ran inside the admission and may have tripped
+  // the page: nothing is written after a trip.
+  if (isDocumentTripped()) return false;
   authStore.set('token', token);
   authStore.set('expiresAt', decodeJwtExp(token));
   if (sessionSyncGraceUntil !== undefined) {

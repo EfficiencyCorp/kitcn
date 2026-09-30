@@ -1060,15 +1060,15 @@ function AuthStateSync({
   const settled = useSyncExternalStore(subscribe, getSettled, getSettled);
 
   useEffect(() => {
-    // Read the trip and the settlement again at the write: a descendant
-    // effect earlier in this commit may have changed either.
+    // Read the trip, the settlement and the held token again at the write: a
+    // descendant effect earlier in this commit may have changed any of them.
     const gate = resolveAuthGate({
       canOpenGate,
       convexIsLoading,
       guardTripped: guardTripped || isDocumentTripped(),
       isAuthenticated,
       optimisticWindow: optimisticAuth && !settled && !isClientSettled(client),
-      token,
+      token: authStore.get('token'),
     });
 
     publishAuthState(authStore, gate);
@@ -1222,6 +1222,7 @@ function resolveAuthGate({
 }
 
 function isOptimisticToken(token: string) {
+  if (!isJwt(token)) return false;
   const expiresAt = decodeJwtExp(token);
   return expiresAt !== null && expiresAt > Date.now();
 }
