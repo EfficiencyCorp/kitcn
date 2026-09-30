@@ -134,9 +134,12 @@ export type ConvexAuthProviderProps = {
    * token that carries one. Guarantees: (1) a token of another user or
    * session (or a JWT without an identity once one is established) is never
    * cached, published, or handed to Convex, cRPC HTTP or the Start loader;
-   * (2) on refusing one, kitcn stops handing out tokens (null), publishes
+   * (2) when a trip happens (this or another provider, or the Start loader,
+   * refuses one), this provider stops handing out tokens (null), publishes
    * unauthenticated, calls `client.close()` (Convex's close semantics govern
-   * its queued work) and then this, where the app should reload the page.
+   * its queued work) and then this, once, where the app should reload the
+   * page. A provider mounted after the trip starts tripped and does not call
+   * it.
    * The trip is page-wide in the browser (never on the server); sign-in
    * mutations fail with `AuthMutationError` code `TOKEN_IDENTITY_CHANGED`
    * until the reload. It governs the token kitcn supplies, not an
