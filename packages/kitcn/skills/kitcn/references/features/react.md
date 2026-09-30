@@ -298,6 +298,22 @@ const mutation = useMutation(crpc.user.update.mutationOptions({
 
 Signature: `crpc.path.mutationOptions(options?)` — standard TanStack mutation options except `mutationFn`.
 
+Pass `optimisticUpdate(localStore, args)` to use Convex's optimistic local
+query store. This option is removed before the TanStack options are returned;
+Convex replays it as query data changes and owns rollback when the mutation
+completes.
+
+```ts
+const mutation = useMutation(crpc.todos.rename.mutationOptions({
+  optimisticUpdate: (store, args) => {
+    const todos = store.getQuery(api.todos.list, {});
+    if (todos) store.setQuery(api.todos.list, {}, todos.map((todo) =>
+      todo._id === args.id ? { ...todo, title: args.title } : todo
+    ));
+  },
+}));
+```
+
 ### Mutation Keys
 
 ```ts

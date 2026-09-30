@@ -406,10 +406,25 @@ All from `kitcn/react`:
   authClient={authClient}
   convexQueryClient={convexQueryClient} // when using TanStack Query
   initialToken={token}           // from SSR (caller.getToken())
+  optimisticAuth                 // opt in: open gates while Convex confirms a held JWT
+  onTokenIdentityChange={() => window.location.reload()}
   onMutationUnauthorized={() => router.push('/login')}
   onQueryUnauthorized={({ queryName }) => console.log(`Unauth: ${queryName}`)}
 >
 ```
+
+`optimisticAuth` only opens auth-bound query gates for a held, unexpired JWT;
+expired, opaque, and refused tokens stay closed. Enable
+`onTokenIdentityChange` to refuse a JWT whose `sub` or `sessionId` differs from
+the document identity before Convex or HTTP sees it. The client closes before
+the callback runs, so reload the document there.
+
+For multiple provider mounts, pass `tokenIdentityBaseline` as
+`sub|sessionId`, or a getter returning the document's current identity. The
+getter is checked for every admission, cached tokens included.
+`onTokenIdentityAdmitted(token)` observes admitted JWTs so the app can update
+that shared baseline. All three identity options require
+`onTokenIdentityChange`.
 
 For `@convex-dev/auth` (React Native):
 ```tsx

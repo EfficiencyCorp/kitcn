@@ -460,6 +460,8 @@ function App() {
       client={convexClient}
       authClient={authClient}
       initialToken={serverToken}
+      optimisticAuth
+      onTokenIdentityChange={() => window.location.reload()}
       onMutationUnauthorized={() => {
         // Custom handler for unauthorized mutations
         openLoginModal();
@@ -483,8 +485,29 @@ function App() {
 | `authClient` | `AuthClient` | Better Auth client instance |
 | `convexQueryClient` | `ConvexQueryClient?` | Shared TanStack Query client bridge |
 | `initialToken` | `string?` | Initial session token (from SSR) |
+| `optimisticAuth` | `boolean?` | Opens auth-bound query gates for a held, unexpired JWT while Convex confirms it. Defaults to `false`. |
+| `onTokenIdentityChange` | `() => void` | Enables the document identity guard. Called after the client is closed when a token changes JWT `sub` or `sessionId`. Reload the document here. |
+| `tokenIdentityBaseline` | `string \| null \| (() => string \| null)` | Optional `sub|sessionId` identity owned by the document. A getter is checked for every token admission. Requires `onTokenIdentityChange`. |
+| `onTokenIdentityAdmitted` | `(token: string) => void` | Called for every decodable token admitted by the identity guard, including cached tokens. Requires `onTokenIdentityChange`. |
 | `onMutationUnauthorized` | `() => void` | Called when mutation is blocked |
 | `onQueryUnauthorized` | `({ queryName }) => void` | Called when query is blocked |
+
+### Optimistic auth and document identity
+
+`optimisticAuth` removes the client-side confirmation wait for a held,
+unexpired JWT. Convex still processes authentication before queries on the
+same connection. An expired, opaque, or refused token never opens the gate.
+
+Use `onTokenIdentityChange` when one document must never send queued work under
+a different user or session. The provider compares the JWT `sub` and
+`sessionId`, refuses a mismatch before caching or forwarding it, closes the
+Convex client, and calls the callback. HTTP cRPC requests use the same guarded
+token source.
+
+For multiple provider mounts in one document, pass the shared identity as
+`tokenIdentityBaseline`. Its format is `sub|sessionId`. A getter is evaluated
+for each admission, including cached tokens. Use `onTokenIdentityAdmitted` to
+observe admitted tokens and update the shared document identity.
 
 ## Auth Flow
 
