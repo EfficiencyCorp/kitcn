@@ -189,16 +189,16 @@ Task state:
 - current_phase: closeout
 - current_phase_status: blocked (repository gate and autoreview; see
   Completion threshold)
-- next_phase: requester review of fix round 5, push, PR body application,
+- next_phase: requester review of fix round 6, push, PR body application,
   live compliance read-back; maintainer review continues on the PR
 - goal_status: implementation and local proof complete; closeout blocked
 
 Current verdict:
-- verdict: ready for delta review of fix round 5
+- verdict: ready for delta review of fix round 6
 - confidence: 91%
 - next owner: requester (delta review, push, PR body), then maintainer review
 - reason: every runtime acceptance criterion and every accepted runtime
-  review finding (round 1 F1-F6, round 2 R2-R4, round 3 S1-S3, round 4 T1-T2, round 5 U1-U4) has a behavioural focused
+  review finding (round 1 F1-F6, round 2 R2-R4, round 3 S1-S3, round 4 T1-T2, round 5 U1-U4, round 6 V1-V2) has a behavioural focused
   test that failed before its fix and passes after it; control tests (for
   example the baseline identity still opening the gate) pass before and
   after by design. F7's spy cleanup, F8-F11 and R6-R7 are structural or
@@ -405,7 +405,7 @@ Completion Gates:
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Recorded above |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | (d) reproduced by unit test; other rungs N/A with reason |
 | Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | `client.test.ts` with `main`'s `client.ts`: 13 pass, 1 fail, exit 1 |
-| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 142 pass, 0 fail across the 6 focused test files at the final head (135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
+| Targeted behavior verification | yes | Run focused test/proof for changed behavior or record N/A | 144 pass, 0 fail across the 6 focused test files at the final head (142 after round 5, 135 after round 4, 128 after round 3, 126 after round 2, 106 after round 1, 94 before it) |
 | TypeScript or typed config changed | yes | Run relevant typecheck | `bun --cwd packages/kitcn typecheck` exit 0 |
 | Package exports or file layout changed | yes | Run the relevant package build before final verification and keep generated updates | `bun --cwd packages/kitcn build` exit 0; no generated updates |
 | Package manifests, lockfile, or install graph changed | no | Run `bun install` and relevant package checks | N/A: no manifest or lockfile change |
@@ -461,6 +461,7 @@ Phase / pass table:
 | Verification | done | Focused tests, typecheck, build, lint:fix, bun check (see evidence) | closeout |
 | Review fix round 1 | done | F1-F11 dispositioned; F1-F6 behavioural red then green; F7 act warnings measured (46 to 0) and spy cleanup a structural fix; F8-F11 document and workflow audits | delta review |
 | Review fix round 2 | done | R1-R5 behavioural red then green (R4 also green on the pre-round-1 parent); R6-R7 document audits; two items declined with rationale; R1, R2 and R5 designs replaced in round 3 | delta review |
+| Review fix round 6 | done | V1-V2 behavioural red then green; V3-V4 document audits | delta review |
 | Review fix round 5 | done | U1-U4 behavioural red then green; U5-U6 document audits | delta review |
 | Review fix round 4 | done | T1-T2 behavioural red then green; T3-T4 document audits | delta review |
 | Review fix round 3 | done | S1-S3 behavioural red then green; S4 document audit; net `convex-auth-provider.tsx` delta vs af7117e8: 74 added, 77 removed | delta review |
@@ -552,8 +553,12 @@ Design rationale:
   remounts it within one document, often with no SSR token, so the guard
   would re-seed from the first token it obtains, which may be another
   identity. Alternatives: hoist one provider above all route groups (not
-  always possible with per-group layouts); module-level guard state (rejected:
-  shared across clients and tests). Chosen: the app passes the identity the
+  always possible with per-group layouts); module-level guard state holding
+  per-token refusal memory or a single guard shared by every provider
+  (rejected: shared across clients and tests). This is distinct from what
+  review rounds 3 to 6 implemented: a browser-only page-wide trip flag and
+  page identity (`react/identity-guard-trip.ts`), never set on the server,
+  alongside each provider's own guard. Chosen: the app passes the identity the
   document already speaks for.
 - Getter and `onTokenIdentityAdmitted`: React `<Activity>` keeps a hidden
   provider mounted with its cached token, so a value read at first render
@@ -868,6 +873,28 @@ Review fixes:
     about 90 lines in the #459 shape with final-head counts; review history
     lives here; the round 4 wrapper paragraph labelled superseded.
 
+- Round 6 (two Codex verification lanes on round 5; every earlier probe
+  passes; upstream provider tests 26/26). Red log:
+  `kitcn-1596-bodies/round7-red.log` (2 fail at 21bfad63).
+  - V1 fixed (bee7ab93), behavioural: a guarded provider records the
+    identity it knows at mount (baseline value, a getter's current answer,
+    or its held SSR token) as the page identity, before any fetch; the
+    Start loader refuses a token of another identity and trips the page.
+    Test: `the Start loader refuses another identity before the provider
+    fetches, from its baseline or held token` (both variants).
+  - V2 fixed (bee7ab93), behavioural: the Start loader marks a client it
+    authenticates as settled, so no optimistic window opens over it;
+    documented (docs, mirror, JSDoc). Test: `a client the Start loader
+    authenticated gets no optimistic window; a fresh one does` (with the
+    fresh-client control).
+  - V3 fixed (body, outside the repo), document audit: the body separates
+    token admission, sign-in publication (re-admits) and auth-state
+    publication (trip and settlement), and qualifies failing-test
+    provenance to accepted runtime findings.
+  - V4 fixed (the round 6 plan commit), document audit: the rejected
+    module-level alternative is distinguished from the implemented
+    page-wide trip and identity.
+
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
 |------------------------|-------|---------------------|------------|
@@ -994,7 +1021,7 @@ Verification evidence:
     `convex-auth-provider.tsx`: 86 added, 72 removed.
   - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
     as blocked or handed-off; not closure).
-- Final head (current; Bun 1.3.9, HEAD 5efbbddb plus this plan):
+- Historical snapshot, fix round 5 (Bun 1.3.9, HEAD 5efbbddb plus this plan):
   - `bun --cwd packages/kitcn build`: exit 0.
   - Focused (`convex-auth-provider.test.tsx` 81, `context.test.tsx` 11,
     `auth-mutations.test.tsx` 11, `use-query-options.test.tsx` 24,
@@ -1009,6 +1036,25 @@ Verification evidence:
   - `test:verify`: exit 0.
   - Docs: both edited MDX pages compile; skill mirror synced;
     `intent:validate` "all passed", `intent:stale` "All skills up-to-date".
+  - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
+    as blocked or handed-off; not closure).
+- Final head (current; Bun 1.3.9, HEAD a1bc229f plus this plan):
+  - `bun --cwd packages/kitcn build`: exit 0 (at 05aeda27; a1bc229f
+    changes only a test).
+  - Focused (`convex-auth-provider.test.tsx` 83, `context.test.tsx` 11,
+    `auth-mutations.test.tsx` 11, `use-query-options.test.tsx` 24,
+    `client.test.ts` 14, `index.retry.test.ts` 1): 144 pass, 0 fail,
+    exit 0, 0 `act` warnings (a1bc229f wrapped the two Start-loader
+    refusals in `act`).
+  - `bun lint:fix`: exit 0, 978 files, no fixes applied, source unchanged.
+  - `bun check`: exit 1 at `fixtures:check` (the `expo` drift) after every
+    earlier lane passed: lint (biome 978 files, eslint), typecheck 5/5,
+    `test:bun` 1511 pass / 0 fail (154 files), `test:vitest` 1053 pass / 14
+    skipped, no type errors, `test:cli` 124 pass / 0 fail, `test:concave`
+    "Concave smoke passed".
+  - `test:verify`: exit 0.
+  - Docs: `client.mdx` compiles; skill mirror synced; `intent:validate` "all
+    passed", `intent:stale` "All skills up-to-date".
   - `check-complete.mjs`: `[autogoal] complete` (gates resolved or recorded
     as blocked or handed-off; not closure).
 - `test:runtime`: not run locally. Its `expo` scenario needs port 3210,
@@ -1054,6 +1100,8 @@ Source-listed case matrix:
 | 37 | HTTP headers re-admit after the app headers await | `context.test.tsx` (U2) | `Authorization` sent (red) | none | pass | done |
 | 38 | Stale `AuthStateSync` publication after a trip or settlement | provider tests (U3) | `true` published (red) | never | pass | done |
 | 39 | Authenticated publication re-admits the token | provider test (U4) | success, `true` (red) | `TOKEN_IDENTITY_CHANGED`, trip | pass | done |
+| 40 | Start loader refuses another identity known from a provider's baseline or held token at mount | provider test (V1) | B handed out (red) | refused, page tripped | pass | done |
+| 41 | No optimistic window over a loader-authenticated client; fresh client keeps it | provider test (V2) | window opened (red) | closed; control open | pass | done |
 | 25 | Refusal memory pruned and bounded | superseded by S1: `TokenRefusals` and its tests deleted | N/A | N/A | N/A | superseded |
 | 26 | Optimistic window ends at the client's first auth result; no refusal count, post-confirmation refusal or remount reopens it | provider tests (S1) | reopened (red) | closed | pass | done |
 | 27 | Hard load: a fresh client with an SSR token still opens before confirmation | provider test (S1 control) | open | open | pass | done |
@@ -1069,7 +1117,7 @@ Final handoff contract:
 - Confidence line: `🟢 90% confidence`
 - Flow table:
   - Reproduced: server logger red (1 fail); features N/A; browser N/A
-  - Verified: 142 focused pass, full `test:bun` 1509/0, `bun check` lanes
+  - Verified: 144 focused pass, full `test:bun` 1511/0, `bun check` lanes
     the diff can affect pass (stops at pre-existing fixture drift); browser
     N/A
 - Browser check: N/A, no rendered UI.
@@ -1100,10 +1148,10 @@ Task-style PR body contract:
 - Never include a line that links to the current PR itself.
 
 Final handoff / sync:
-- Commit: twenty-seven local commits on `feat/optimistic-auth-gate` (four
+- Commit: thirty-one local commits on `feat/optimistic-auth-gate` (four
   before review, four in fix round 1, five in fix round 2, five in fix
   round 3, six in fix round 4 including its addendum, three in fix round
-  5).
+  5, four in fix round 6).
 - PR: #473.
 - Issue: N/A.
 - Browser proof: N/A.
@@ -1135,11 +1183,13 @@ Timeline:
 - 2026-09-30 Fix round 5: two verification lanes; U1-U4 through the gate
   (Start loader, HTTP headers, auth state, authenticated publication); U5
   narrowed contract; U6 short body; full gates at the final head.
+- 2026-09-30 Fix round 6: V1 page identity at mount, V2 loader settles its
+  client, V3-V4 wording; full gates at the final head.
 
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Closeout blocked on the pre-existing fixture drift and autoreview; fix rounds 1 to 5 committed locally |
+| Where am I? | Closeout blocked on the pre-existing fixture drift and autoreview; fix rounds 1 to 6 committed locally |
 | Where am I going? | Requester delta review, push, PR body application, live read-back; maintainer review |
 | What is the goal? | Per-PR task evidence and proof for #473 |
 | What have I learned? | See Findings |
