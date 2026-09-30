@@ -57,27 +57,42 @@ export const admitDocumentToken = (token: string) => {
   return false;
 };
 
+/** A JWT's payload: three segments whose middle one is a JSON object. */
+function decodeJwtClaims(token: string): Record<string, unknown> | null {
+  const segments = token.split('.');
+  if (segments.length !== 3 || !segments[1]) return null;
+  try {
+    const payload: unknown = JSON.parse(
+      atob(segments[1].replaceAll('-', '+').replaceAll('_', '/'))
+    );
+    return typeof payload === 'object' &&
+      payload !== null &&
+      !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a token is a JWT, by structure and whatever its `exp`: every JWT
+ * goes through identity admission; only other strings (opaque session
+ * tokens) are exchange credentials.
+ */
+export const isJwt = (token: string) => decodeJwtClaims(token) !== null;
+
 /**
  * The user and session a Better Auth Convex JWT speaks for (`sub` and
  * `sessionId`), or null. Other claims (name, email, updatedAt) may change
  * within one session and do not count.
  */
 export function decodeTokenIdentity(token: string | null): string | null {
-  if (!token) return null;
-  try {
-    const segment = token.split('.')[1];
-    if (!segment) return null;
-    const payload: unknown = JSON.parse(
-      atob(segment.replaceAll('-', '+').replaceAll('_', '/'))
-    );
-    if (typeof payload !== 'object' || payload === null) return null;
-    const sub = 'sub' in payload ? payload.sub : null;
-    const sessionId = 'sessionId' in payload ? payload.sessionId : null;
-    if (typeof sub !== 'string') return null;
-    return `${sub}|${typeof sessionId === 'string' ? sessionId : ''}`;
-  } catch {
-    return null;
-  }
+  const claims = token ? decodeJwtClaims(token) : null;
+  if (!claims || typeof claims.sub !== 'string') return null;
+  const sessionId =
+    typeof claims.sessionId === 'string' ? claims.sessionId : '';
+  return `${claims.sub}|${sessionId}`;
 }
 
 /** Test-only: clear the trip and the document identity between tests. */

@@ -38,6 +38,7 @@ import {
 import {
   decodeTokenIdentity,
   isDocumentTripped,
+  isJwt,
   recordDocumentIdentity,
   subscribeDocumentTrip,
   tripDocument,
@@ -692,7 +693,7 @@ function ConvexAuthProviderInner({
     if (
       onTokenIdentityChangeRef.current &&
       persistedToken &&
-      decodeJwtExp(persistedToken) === null &&
+      !isJwt(persistedToken) &&
       guardHasIdentity(identityGuardRef.current!)
     ) {
       return;
@@ -1104,7 +1105,7 @@ function judgeTokenIdentity(
  * credential: the JWT it is exchanged for is admitted before it is used.
  */
 function refusesHeldToken(token: string, established: string | null) {
-  if (decodeJwtExp(token) === null || established === null) return false;
+  if (!isJwt(token) || established === null) return false;
   return decodeTokenIdentity(token) !== established;
 }
 

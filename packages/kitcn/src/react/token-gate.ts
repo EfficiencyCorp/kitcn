@@ -1,7 +1,7 @@
 'use client';
 
 import { type AuthStore, decodeJwtExp } from './auth-store';
-import { isDocumentTripped } from './identity-guard-trip';
+import { isDocumentTripped, isJwt } from './identity-guard-trip';
 
 /**
  * A provider's identity admission: true to admit the token; when it refuses a
@@ -35,7 +35,7 @@ export const admitToken = (
   { announce }: { announce: boolean }
 ) => {
   if (isDocumentTripped()) return false;
-  if (decodeJwtExp(token) === null) return true;
+  if (!isJwt(token)) return true;
   const admission = authStore.store
     ? admissions.get(authStore.store)
     : undefined;

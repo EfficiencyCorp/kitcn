@@ -2922,6 +2922,138 @@ describe('ConvexAuthProvider', () => {
       }
     });
 
+    const claimsJwt = (claims: Record<string, unknown>) =>
+      `x.${btoa(JSON.stringify(claims))}.z`;
+    const foreignWithoutExpiry = [
+      ['exp 0', claimsJwt({ exp: 0, sessionId: 'session_b', sub: 'user_b' })],
+      ['no exp', claimsJwt({ sessionId: 'session_b', sub: 'user_b' })],
+    ] as const;
+
+    test('a JWT of another identity is refused whatever its exp: refresh and HTTP', async () => {
+      for (const [, tokenForB] of foreignWithoutExpiry) {
+        resetDocumentTripForTests();
+        const harness = convexHarness({
+          extraHook: useFetchAccessToken,
+          initialToken: identityJwt('user_a', 'session_a'),
+          tokens: [tokenForB],
+        });
+        await flush();
+        const published: Array<string | null> = [];
+        const unsubscribe = harness.result.current.store.subscribe(
+          'token',
+          (value: string | null) => published.push(value)
+        );
+        await harness.fetch(false);
+
+        expect(await harness.fetch(true)).toBeNull();
+        const httpFetcher = harness.result.current.extra as () => Promise<
+          string | null
+        >;
+        let http: string | null = 'unset';
+        await act(async () => {
+          http = await httpFetcher();
+        });
+        unsubscribe();
+
+        expect(http).toBeNull();
+        expect(published).not.toContain(tokenForB);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        harness.unmount();
+      }
+    });
+
+    test('a held SSR JWT of another identity is withheld whatever its exp', async () => {
+      for (const [, tokenForB] of foreignWithoutExpiry) {
+        resetDocumentTripForTests();
+        const harness = convexHarness({
+          baseline: 'user_a|session_a',
+          initialToken: tokenForB,
+          session: 'pending',
+        });
+        await flush();
+
+        expect(harness.result.current.store.get('token')).toBeNull();
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        harness.unmount();
+      }
+    });
+
+    test('a sign-in returning a JWT of another identity fails whatever its exp', async () => {
+      for (const [, tokenForB] of foreignWithoutExpiry) {
+        resetDocumentTripForTests();
+        const authClientExtras = {
+          signIn: { email: async () => ({ data: { token: tokenForB } }) },
+        };
+        const mutations = createAuthMutations(authClientExtras as any);
+        const harness = convexHarness({
+          authClientExtras,
+          extraHook: () => mutations.useSignInMutationOptions(),
+          initialToken: identityJwt('user_a', 'session_a'),
+        });
+        await flush();
+        const options = harness.result.current.extra as {
+          mutationFn: (args: unknown) => Promise<unknown>;
+        };
+        let failure: unknown;
+        await act(async () => {
+          failure = await options.mutationFn({}).then(
+            () => null,
+            (error: unknown) => error
+          );
+        });
+
+        expect((failure as AuthMutationError)?.code).toBe(
+          'TOKEN_IDENTITY_CHANGED'
+        );
+        expect(harness.result.current.store.get('token')).not.toBe(tokenForB);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        harness.unmount();
+      }
+    });
+
+    test('the Start loader refuses a JWT of another identity whatever its exp', async () => {
+      for (const [, tokenForB] of foreignWithoutExpiry) {
+        resetDocumentTripForTests();
+        const harness = convexHarness({
+          baseline: 'user_a|session_a',
+          session: 'pending',
+        });
+        await flush();
+        const fresh = { clearAuth: mock(() => {}), setAuth: mock(() => {}) };
+        let state: unknown;
+        await act(async () => {
+          state = await syncConvexAuthForStartLoader({
+            convex: fresh,
+            getToken: async () => tokenForB,
+          });
+        });
+
+        expect(state).toEqual({ isAuthenticated: false, token: null });
+        expect(fresh.setAuth).toHaveBeenCalledTimes(0);
+        harness.unmount();
+      }
+    });
+
+    test('a JWT without exp of the established identity is handed out but never opens the optimistic gate', async () => {
+      const tokenForA = claimsJwt({ sessionId: 'session_a', sub: 'user_a' });
+      const handedOut = convexHarness({
+        baseline: 'user_a|session_a',
+        tokens: [tokenForA],
+      });
+      await flush();
+      expect(await handedOut.fetch(false)).toBe(tokenForA);
+      expect(handedOut.onTokenIdentityChange).toHaveBeenCalledTimes(0);
+
+      const held = convexHarness({
+        baseline: 'user_a|session_a',
+        initialToken: tokenForA,
+        optimisticAuth: true,
+        session: 'pending',
+      });
+      await flush();
+      expect(held.result.current.auth.isAuthenticated).toBe(false);
+    });
+
     test('a throwing onTokenIdentityChange still closes the client', async () => {
       const onTokenIdentityChange = mock(() => {
         throw new Error('callback failed');
