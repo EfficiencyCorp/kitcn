@@ -8,7 +8,8 @@
   the auth store, Convex, cRPC HTTP headers or the TanStack Start loader: the
   SSR token, restored sessions, sign-in tokens, JWTs without `exp` and
   concurrent first tokens are all held to the page's identity and every
-  mounted provider's current `tokenIdentityBaseline` getter.
+  mounted provider's current `tokenIdentityBaseline` getter, including changes
+  made by `onTokenIdentityAdmitted` before publication.
 - Fix an identity guard trip staying local to one provider: every mounted
   provider now hands out no token and publishes unauthenticated, each guarded
   one closes its client and calls `onTokenIdentityChange` once, including a

@@ -203,7 +203,10 @@ export const admitToken = (
     const registry = pageRegistry();
     if (registry) registry.documentIdentity ??= identity;
   }
-  if (announce && guard?.guarded && isJwt(token)) guard.onAdmitted(token);
+  if (announce && guard?.guarded && isJwt(token)) {
+    guard.onAdmitted(token);
+    return admitToken(token, { guard, use });
+  }
   return !isDocumentTripped() && !guard?.tripped;
 };
 

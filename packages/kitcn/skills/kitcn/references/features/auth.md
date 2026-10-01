@@ -440,7 +440,8 @@ provider unmounts. Two kitcn versions or revisions on one page (dev HMR
 across revisions included) are unsupported: no shared page identity until
 reload.
 `onTokenIdentityAdmitted(token)` observes admitted JWTs so the app can update
-that shared baseline. All three identity options require
+that shared baseline. Admission rechecks the baseline after the callback before
+publishing or handing out the token. All three identity options require
 `onTokenIdentityChange`.
 
 For `@convex-dev/auth` (React Native):

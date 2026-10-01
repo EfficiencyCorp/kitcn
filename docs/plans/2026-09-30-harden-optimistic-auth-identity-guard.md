@@ -623,7 +623,11 @@ Verification evidence:
     `onTokenIdentityChange` failed with 0 closes, expected 1. The repaired
     provider quarantines once independently of its one-time notification,
     and checks the terminal trip when the callback becomes enabled.
-  - Regression GREEN: 1 pass; source auth-client/react/auth-start: 294 pass,
+  - Post-callback baseline regression: `onTokenIdentityAdmitted` changed the
+    live getter from A to B. RED observed A in token subscribers before its
+    eventual refusal. Admission now re-enters without announcing after the
+    callback, checking all current identities before any token publication.
+  - Late-enable regression GREEN: 1 pass; source auth-client/react/auth-start: 294 pass,
     0 fail across 22 files; source-first package typecheck and build pass.
   - Original-head full `bun check` passed, including runtime; final repaired
     full gate is being rerun. Full final results belong in the closeout plan.

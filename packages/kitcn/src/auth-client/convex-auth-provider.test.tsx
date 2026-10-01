@@ -3432,6 +3432,31 @@ describe('ConvexAuthProvider', () => {
       expect(isDocumentTripped()).toBe(false);
     });
 
+    test('a baseline changed inside onTokenIdentityAdmitted prevents token publication', async () => {
+      let baseline = 'user_a|session_a';
+      const tokenForA = identityJwt('user_a', 'session_a');
+      const harness = convexHarness({
+        baseline: () => baseline,
+        onTokenIdentityAdmitted: () => {
+          baseline = 'user_b|session_b';
+        },
+        tokens: [tokenForA],
+      });
+      await flush();
+      const published: Array<string | null> = [];
+      const unsubscribe = harness.result.current.store.subscribe(
+        'token',
+        (token: string | null) => published.push(token)
+      );
+
+      expect(await harness.fetch(false)).toBeNull();
+      unsubscribe();
+
+      expect(published).not.toContain(tokenForA);
+      expect(isDocumentTripped()).toBe(true);
+      expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+    });
+
     test('a trip inside onTokenIdentityAdmitted leaves no token in the store', async () => {
       const harness = convexHarness({
         onTokenIdentityAdmitted: () => tripDocument(),

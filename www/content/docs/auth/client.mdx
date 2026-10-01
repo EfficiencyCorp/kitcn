@@ -514,7 +514,9 @@ token source. What the guard guarantees:
    published, or handed to Convex, cRPC HTTP or the TanStack Start loader.
    Once an identity is established, a JWT without one is refused too, and an
    opaque session token is only exchanged for a JWT, never handed to Convex.
-2. When a trip happens (any provider or the Start loader refuses such a
+2. Admission rechecks the current baselines after `onTokenIdentityAdmitted`
+   returns, before publishing or handing out the token.
+3. When a trip happens (any provider or the Start loader refuses such a
    token), every mounted provider hands out no token and publishes
    `isAuthenticated: false`; each one with `onTokenIdentityChange` closes its
    client and calls it once. The trip covers the page in the browser (never
