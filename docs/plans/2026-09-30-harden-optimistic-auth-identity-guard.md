@@ -105,16 +105,16 @@ Task state:
 - task_type: bug fix (one package)
 - task_complexity: non-trivial
 - current_phase: closeout
-- current_phase_status: in_progress (autoclosure repair and fresh proof)
-- next_phase: final repository gate, autoreview, push, exact-head verification
-- goal_status: implementation repaired; final closeout in progress
+- current_phase_status: verified source; final delivery externally handed off
+- next_phase: push, exact-head verification, protected approval
+- goal_status: implementation and local proof complete; landing approval external
 
 Current verdict:
-- verdict: preserved complete task state for exact PR #475; closeout underway
-- confidence: final confidence follows fresh proof
+- verdict: source ready after two additional behavioral repairs
+- confidence: 95% after focused, built, independent and full-gate proof
 - next owner: autoclosure, then protected code-owner/last-push approver
-- reason: historical gaps are being replayed; late guard enablement after a
-  page trip reproduced and repaired without changing the public API.
+- reason: both additional defects reproduced and repaired without public API
+  changes; final exact-head delivery receipts are required before landing.
 
 Implementation readiness:
 - verdict: ready
@@ -315,16 +315,16 @@ Completion Gates:
 | Agent-native review for agent/tooling changes | yes | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | PASS, no findings |
 | Local install corruption suspected | no | Run `bun install` once, rerun the exact failing command, or record N/A | N/A: pinned Bun 1.3.9 used throughout |
 | Commit created | yes | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | Runtime, docs and plan commits on this branch |
-| PR create or update | handed-off | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | Pending: PR opens after #473 merges; push reserved by the requester |
+| PR create or update | handed-off | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | Exact PR #475 updated by autoclosure; no history rewrite; final receipts recorded externally after versioned evidence push |
 | Task-style PR body verified | handed-off | Verify the PR body with `gh pr view --json body`; it must preserve auto-release blocks when applicable, must not include a current-PR self-link, and must use the PR #270 emoji format: `🐛 Fixes ...`, `🟢 95-100% confidence`, `Phase / 🧪 Tests / 🌐 Browser` table, and bold emoji Outcome/Caveat/Design/Verified sections | Pending: draft body local; `gh pr view --json body` read-back after it is applied |
-| PR task evidence verified | handed-off | Verify body plan line, plan at PR head, and exact PR ownership | Pending: plan identifies the PR once its number exists |
+| PR task evidence verified | yes | Verify body plan line, plan at PR head, and exact PR ownership | Exact PR #475 verified COMPLETE at f9016674; body names this existing plan |
 | PR proof image hosting | no | If PR body needs browser proof, replace local image paths with hosted GitHub URLs or record N/A | N/A: no images |
 | GitHub issue sync-back | no | Post concise issue sync after PR exists, or record N/A/blocker | N/A: no issue |
 | Final handoff contract | yes | Fill the final handoff fields below with exact PR/issue/confidence/tests/browser/outcome/caveats/design/verification content or N/A reason | Filled below |
 | Final lint | yes | Run `bun lint:fix` or scoped equivalent | `bun lint:fix` exit 0, no source change |
 | Output budget discipline | yes | Verify no unbounded high-volume command output was streamed, or record the accidental output and recovery | Summaries only |
 | Timed checkpoint | no | If duration was requested, keep improving until elapsed, then finish the current loop cleanly; otherwise N/A | N/A |
-| Autoreview for non-trivial implementation changes | blocked | Load `.agents/skills/autoreview/SKILL.md`; use dirty local `--mode local`, branch/PR `--mode branch --base <base>`, or committed slice `--mode commit --commit <ref>` until no accepted/actionable findings, or record N/A for docs-only/trivial/no local patch | The helper requires TruffleHog, not installed; independent review lanes cover the diff |
+| Autoreview for non-trivial implementation changes | yes | Load `.agents/skills/autoreview/SKILL.md`; use dirty local `--mode local`, branch/PR `--mode branch --base <base>`, or committed slice `--mode commit --commit <ref>` until no accepted/actionable findings, or record N/A for docs-only/trivial/no local patch | 2026-10-01 branch review at 90a1653e vs main126f3e99: TruffleHog clean, one full bundle, exit0, no accepted/actionable P0 findings |
 | Goal plan complete | yes | Run `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/2026-09-30-harden-optimistic-auth-identity-guard.md` | `[autogoal] complete` |
 | Public API / package boundary proof | yes | Source-audit public API, exports, and package boundary impact | No export change; `TOKEN_IDENTITY_CHANGED` error code on sign-in mutations after a trip |
 | Convex bundle/import proof | yes | Audit affected function-entry static graphs or record N/A | Loader entry imports two dependency-free modules |
@@ -351,8 +351,8 @@ Phase / pass table:
 | Intake and source read | done | #473 head and review history read | implementation |
 | Implementation | done | Port of the hardening onto fcbd2f84, reconciled with ea5e442d | verification |
 | Verification | done | Probe at fcbd2f84, focused suites, full gate | closeout |
-| Commit / PR / GitHub sync | handed-off | Commits local; PR after #473 merges | requester |
-| Closeout | blocked | Pre-existing fixture drift; autoreview needs TruffleHog | requester |
+| Commit / PR / GitHub sync | handed-off | Source commits plus final proof snapshot on exact #475 | post-push receipts |
+| Closeout | blocked | Protected code-owner and last-push approval; no bypass | authorized reviewer |
 
 Findings:
 - Probe at fcbd2f84 (this branch's provider tests, 44 in the `identity guard
@@ -629,8 +629,10 @@ Verification evidence:
     callback, checking all current identities before any token publication.
   - Late-enable regression GREEN: 1 pass; source auth-client/react/auth-start: 294 pass,
     0 fail across 22 files; source-first package typecheck and build pass.
-  - Original-head full `bun check` passed, including runtime; final repaired
-    full gate is being rerun. Full final results belong in the closeout plan.
+  - Final repaired-source full `bun check` exit0: Bun1556/0, Vitest1053 pass
+    and14 skipped, CLI124/0, lint/typecheck, Concave, fixture freshness,
+    consumer verify and runtime scenarios. Final focused suites295/0 and
+    built-entrypoint integration10/0; both new regressions GREEN.
   - Typed token endpoint call replaces an unnecessary `any`; nullable results
     retain the existing no-token behavior. Internal narrative comments were
     removed while protocol, SSR and Convex ordering constraints were retained.
@@ -638,8 +640,9 @@ Verification evidence:
     synced. Intent validation/staleness, MDX compile and mirror parity pass.
   - Independent verifier uses its own worktree; parent baseline 123/0,
     original candidate focused 192/0 plus built-entrypoint 10/0.
-  - Autoreview, final-head proof, delivery and terminal feedback receipts
-    continue in docs/plans/475-autoclosure.md; no approval bypass.
+  - Autoreview exit0 and TruffleHog clean. Final-head replay, delivery and
+    terminal feedback receipts continue externally after the versioned plan
+    push, as specified in docs/plans/475-autoclosure.md; no approval bypass.
 - The snapshots below are historical author evidence, not final-head proof.
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
@@ -750,19 +753,21 @@ Final handoff contract:
 - Commit line: runtime, docs and plan commits on `feat/optimistic-auth-hardening`.
 - PR line: https://github.com/udecode/kitcn/pull/475 (#475), follow-up to #473.
 - Issue line: `🐛 Fixes ➖ N/A`
-- Confidence line: `🟢 90% confidence`
+- Confidence line: `🟢 95% confidence`
 - Flow table:
   - Reproduced: 38 tests fail at #473's head; browser N/A
-  - Verified: focused 178 pass, built-entrypoint 10 pass, `test:bun` 1554/0; browser N/A
+  - Verified: focused 295 pass, built-entrypoint 10 pass, full repository/runtime gate; browser N/A
 - Browser check: N/A.
 - Outcome: the identity guard and optimistic gate hold their documented guarantees.
-- Caveat: fixture drift; `test:runtime` not run locally; autoreview blocked.
+- Caveat: protected approval external; one optimism setting per client;
+  mixed kitcn revisions unsupported until reload.
 - Design:
   - Chosen boundary: one admission function in the registry; page-level trip and identity; client window.
   - Why not quick patch: each bypass was a separate write path.
   - Why not broader change: no API change needed.
 - Verified: see Verification evidence.
-- PR body verified: pending the PR (requester).
+- PR body verified: existing exact plan line read back; final updated proof body
+  has a post-push read-back gate in docs/plans/475-autoclosure.md.
 
 Task-style PR body contract:
 - Preserve any existing `<!-- auto-release:start -->` block. If a changeset is
@@ -790,7 +795,7 @@ Final handoff / sync:
 - PR: https://github.com/udecode/kitcn/pull/475 (#475).
 - Issue: N/A.
 - Browser proof: N/A.
-- Caveats: fixture drift; `test:runtime`; autoreview.
+- Caveats: final protected approval belongs to another authorized reviewer.
 
 Timeline:
 - 2026-09-30 Branch from #473's head fcbd2f84; hardening ported from
@@ -826,16 +831,16 @@ Timeline:
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Closeout blocked (fixture drift, autoreview); commits local |
-| Where am I going? | PR after #473 merges; requester pushes |
+| Where am I? | Repaired source verified; delivery receipts and protected approval |
+| Where am I going? | Push exact #475, read back final head/body, await protected approval |
 | What is the goal? | Fix the guard and gate defects still at #473's head |
 | What have I learned? | See Findings |
 | What have I done? | See Timeline |
 
 Open risks:
-- Autoreview has not run (TruffleHog missing locally).
-- Rebase onto `main` after #473 merges; if #473 released first, move the
-  changeset lines into a new patch changeset (see Decisions).
+- Autoreview and TruffleHog pass; no unresolved accepted review finding.
+- Exact-head final receipts and required CI are mandatory after the final
+  versioned push. Approval must satisfy code-owner and last-push rules.
 - One `optimisticAuth` setting per Convex client is a documented rule.
 - Accepted: two kitcn versions or revisions on one page share no page
   identity until reload (L5).
