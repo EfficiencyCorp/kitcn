@@ -3842,6 +3842,31 @@ describe('ConvexAuthProvider', () => {
         expect(harness.result.current.store.get('token')).toBeNull();
       });
 
+      test('a guard enabled after the page trips closes its client and reports once', async () => {
+        const guardHolder = { current: false };
+        const harness = convexHarness({
+          guardHolder,
+          initialToken: identityJwt('user_a', 'session_a'),
+        });
+        await flush();
+        act(() => tripDocument());
+        expect(harness.close).not.toHaveBeenCalled();
+        expect(harness.onTokenIdentityChange).not.toHaveBeenCalled();
+
+        guardHolder.current = true;
+        harness.rerender();
+        await flush();
+
+        expect(harness.close).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+        expect(harness.result.current.store.get('token')).toBeNull();
+        expect(harness.result.current.auth.isAuthenticated).toBe(false);
+        harness.rerender();
+        await flush();
+        expect(harness.close).toHaveBeenCalledTimes(1);
+        expect(harness.onTokenIdentityChange).toHaveBeenCalledTimes(1);
+      });
+
       test("on a guarded page, the Start loader's first admitted JWT claims the page identity", async () => {
         const convex = makeConvexClient();
         const harness = convexHarness({ convex, session: 'pending' });

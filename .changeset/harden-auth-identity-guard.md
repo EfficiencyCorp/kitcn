@@ -11,7 +11,8 @@
   mounted provider's current `tokenIdentityBaseline` getter.
 - Fix an identity guard trip staying local to one provider: every mounted
   provider now hands out no token and publishes unauthenticated, each guarded
-  one closes its client and calls `onTokenIdentityChange` once, and sign-in
+  one closes its client and calls `onTokenIdentityChange` once, including a
+  guard enabled after the trip, and sign-in
   mutations fail with `TOKEN_IDENTITY_CHANGED` until the page reloads.
 - Fix the `optimisticAuth` window reopening after Convex refused a token: it
   now ends at the Convex client's first auth result.

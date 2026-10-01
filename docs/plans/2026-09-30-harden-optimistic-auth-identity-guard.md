@@ -105,18 +105,16 @@ Task state:
 - task_type: bug fix (one package)
 - task_complexity: non-trivial
 - current_phase: closeout
-- current_phase_status: blocked (fixture drift, autoreview); push and PR
-  reserved by the requester
-- next_phase: requester review, then PR after #473 merges
-- goal_status: implementation and local proof complete
+- current_phase_status: in_progress (autoclosure repair and fresh proof)
+- next_phase: final repository gate, autoreview, push, exact-head verification
+- goal_status: implementation repaired; final closeout in progress
 
 Current verdict:
-- verdict: ready for review as a follow-up to #473
-- confidence: 90%
-- next owner: requester
-- reason: each listed defect fails at fcbd2f84 and passes here; the full gate
-  passes except the pre-existing fixture drift; autoreview is blocked on
-  TruffleHog and `test:runtime` did not run locally.
+- verdict: preserved complete task state for exact PR #475; closeout underway
+- confidence: final confidence follows fresh proof
+- next owner: autoclosure, then protected code-owner/last-push approver
+- reason: historical gaps are being replayed; late guard enablement after a
+  page trip reproduced and repaired without changing the public API.
 
 Implementation readiness:
 - verdict: ready
@@ -296,7 +294,7 @@ Completion Gates:
 | Gate | Applies | Required action | Evidence |
 |------|---------|-----------------|----------|
 | Named verification threshold | yes | Run the command, proof, source audit, or artifact check named in this plan | See Verification evidence |
-| Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | Not-yet-created follow-up PR; PR number added when opened |
+| Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | Exact PR https://github.com/udecode/kitcn/pull/475; body names this plan and fetched head contains it |
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Valid; reproduced |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | Unit and integration tests; other rungs N/A |
 | Bug reproduced before fix | yes | Record failing test/repro or N/A with reason | 38 fail at fcbd2f84 |
@@ -618,6 +616,27 @@ Error attempts:
 | Built red for round H3: a chained shell command meant to stash the fix, build and restore failed on zsh word splitting; its fallback `git checkout` reverted the uncommitted registry edits and `git stash pop` applied an unrelated stash (feat/crpc-optimistic-update split-B) into this worktree | 1 | Re-applied the registry edits; no chained stash moves | Registry restored and re-verified; the popped stash's two untracked files remain in this worktree, byte-identical to dangling stash commit 7ae5df22 (restoring the stash entry and deleting the files is left to the requester) |
 
 Verification evidence:
+- 2026-10-01 autoclosure in
+  `/Users/zbeyens/.codex/worktrees/pr475-autoclosure/better-convex` (Bun 1.3.12):
+  - Intake head f9016674, base main 126f3e99; COMPLETE task state, preserved.
+  - Late enablement regression: mounting unguarded, tripping, then enabling
+    `onTokenIdentityChange` failed with 0 closes, expected 1. The repaired
+    provider quarantines once independently of its one-time notification,
+    and checks the terminal trip when the callback becomes enabled.
+  - Regression GREEN: 1 pass; source auth-client/react/auth-start: 294 pass,
+    0 fail across 22 files; source-first package typecheck and build pass.
+  - Original-head full `bun check` passed, including runtime; final repaired
+    full gate is being rerun. Full final results belong in the closeout plan.
+  - Typed token endpoint call replaces an unnecessary `any`; nullable results
+    retain the existing no-token behavior. Internal narrative comments were
+    removed while protocol, SSR and Convex ordering constraints were retained.
+  - Published auth guidance updated through its source; generated mirror
+    synced. Intent validation/staleness, MDX compile and mirror parity pass.
+  - Independent verifier uses its own worktree; parent baseline 123/0,
+    original candidate focused 192/0 plus built-entrypoint 10/0.
+  - Autoreview, final-head proof, delivery and terminal feedback receipts
+    continue in docs/plans/475-autoclosure.md; no approval bypass.
+- The snapshots below are historical author evidence, not final-head proof.
 - Probe (Bun 1.3.9, fcbd2f84 source, this branch's provider tests, inert
   stand-in for the trip module): 52 pass, 38 fail (Findings); log kept
   outside the repo.

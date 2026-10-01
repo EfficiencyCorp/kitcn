@@ -423,7 +423,8 @@ loader sees it. On a trip, every mounted provider hands out no token and
 publishes unauthenticated; each guarded one closes its client, then calls the
 callback once, so reload the document there. Browser only, page-wide: later
 providers start tripped, and a guarded one that mounts or shows again on a
-tripped page also closes its client and calls the callback once; sign-in
+tripped page also closes its client and calls the callback once. Enabling the
+guard on a tripped page delivers that close and callback once too; sign-in
 mutations fail with `TOKEN_IDENTITY_CHANGED`.
 
 For multiple provider mounts, pass `tokenIdentityBaseline` as

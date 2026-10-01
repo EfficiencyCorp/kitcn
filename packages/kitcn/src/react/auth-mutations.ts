@@ -42,9 +42,6 @@ type SignInMutationOptionsHook<TData, TVariables = void> = (
   }
 ) => UseMutationOptions<TData, DefaultError, TVariables>;
 
-/** Poll until JWT token exists (auth complete) (max 5s) */
-// A tripped identity guard quarantined this document (another account took
-// over): signing in here would only publish into a dead end, so it fails.
 const tokenIdentityChangedError = () =>
   new AuthMutationError({
     code: 'TOKEN_IDENTITY_CHANGED',
@@ -110,8 +107,6 @@ const seedReturnedToken = (store: AuthStore, value: unknown) => {
     return;
   }
 
-  // Through the token gate: a trip, or a JWT for another identity (which
-  // trips the document), fails the mutation instead of publishing it.
   if (
     !publishToken(store, token, {
       announce: true,

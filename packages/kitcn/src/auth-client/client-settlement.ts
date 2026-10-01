@@ -6,12 +6,7 @@ import { pageRegistry } from '../react/identity-guard-registry';
 // recorded there, not in a React effect, so a result reported just before an
 // unmount still counts, every provider over the client hears it, and a local
 // session change (which reports nothing) does not.
-// The wrapper is installed by the first provider with `optimisticAuth` over a
-// client; results reported before that are not seen. The state lives in the
-// page registry shared by every built entry (the Start loader settles clients
-// too); on the server nothing is recorded.
 
-/** Wraps the client's `setAuth` once, so every `onChange` records settlement. */
 export function watchClientSettlement(client: ConvexReactClient) {
   const registry = pageRegistry();
   if (!registry || registry.watchedClients.has(client)) return;
@@ -28,10 +23,6 @@ export function watchClientSettlement(client: ConvexReactClient) {
     );
 }
 
-/**
- * Marks the client settled: its optimistic window is over, or never opens.
- * The Start loader calls it when it sets auth before any provider renders.
- */
 export function settleClient(client: object) {
   const registry = pageRegistry();
   if (!registry || registry.settledClients.has(client)) return;

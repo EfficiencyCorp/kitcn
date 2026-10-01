@@ -521,7 +521,8 @@ token source. What the guard guarantees:
    the server): providers and clients mounted later start tripped, a guarded
    provider that mounts or shows again on a tripped page also closes its
    client and calls `onTokenIdentityChange` once (so a trip that happened
-   while none was mounted still reaches the app), and sign-in mutations fail
+   while none was mounted still reaches the app). Enabling the guard after a
+   trip also closes the client and calls back once. Sign-in mutations fail
    with `TOKEN_IDENTITY_CHANGED` until the reload.
 
 The guard covers the token kitcn supplies, not an `Authorization` header the

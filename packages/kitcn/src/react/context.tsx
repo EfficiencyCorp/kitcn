@@ -244,8 +244,6 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
           // eslint-disable-next-line react-hooks/purity -- called in async callback, not during render
           const timeRemaining = expiresAt ? expiresAt - Date.now() : 0;
           const heldToken = authStore.get('token');
-          // The guarded fetcher when a provider supplies one, else the cached
-          // token (60s leeway).
           const token = fetchAccessToken
             ? await fetchAccessToken({
                 forceRefreshToken: !!expiresAt && timeRemaining < 60_000,
@@ -257,8 +255,6 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
             typeof httpOptions.headers === 'function'
               ? await httpOptions.headers()
               : httpOptions.headers;
-          // Admitted after the last await here, and again at send, after the
-          // per-call headers load.
           const admit = () =>
             !!token && admitStoreToken(authStore, token, { use: 'handout' });
           return admit()

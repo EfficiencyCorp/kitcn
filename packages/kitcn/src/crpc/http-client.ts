@@ -125,12 +125,6 @@ export function buildSearchParams(
   return params;
 }
 
-/**
- * A base-headers result may carry this (non-enumerable, so spreads drop it):
- * called synchronously right before dispatch, after every await; `false`
- * drops the `Authorization` it came with, unless a per-call header replaced
- * it. kitcn's auth token source uses it so a token is re-admitted at send.
- */
 export const RECHECK_AUTHORIZATION = Symbol.for(
   'kitcn.http.recheckAuthorization'
 );
@@ -239,8 +233,6 @@ export async function executeHttpRequest(opts: {
   }
   Object.assign(finalHeaders, headerValues);
 
-  // Last check after every await: the base Authorization is dropped if its
-  // source no longer admits it.
   const recheck = (
     resolvedBaseHeaders as
       | { [RECHECK_AUTHORIZATION]?: () => boolean }
