@@ -187,7 +187,7 @@ export const admitToken = (
     guard,
     use,
   }: { announce?: boolean; guard?: IdentityGuard; use: TokenUse }
-) => {
+): boolean => {
   if (!isTokenAdmissible(token, guard, use)) {
     if (isJwt(token)) {
       if (guard) guard.tripped = true;
