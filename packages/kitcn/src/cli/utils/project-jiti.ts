@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
+import Module, { createRequire } from 'node:module';
 import path from 'node:path';
 import { CRPC_BUILDER_STUB_SOURCE } from './crpc-builder-stub.js';
 import { loadJiti } from './lazy-deps.js';
@@ -37,11 +37,30 @@ type TypeScriptModule = {
     error?: unknown;
   };
   sys: {
+    directoryExists: (path: string) => boolean;
     fileExists: (path: string) => boolean;
+    getCurrentDirectory: () => string;
     readFile: (path: string) => string | undefined;
     readDirectory: (...args: any[]) => string[];
+    realpath?: (path: string) => string;
     useCaseSensitiveFileNames: boolean;
   };
+  ModuleKind: { CommonJS: number; NodeNext: number };
+  ModuleResolutionKind: { NodeNext: number };
+  createModuleResolutionCache: (
+    currentDirectory: string,
+    getCanonicalFileName: (fileName: string) => string,
+    options: object
+  ) => unknown;
+  resolveModuleName: (
+    moduleName: string,
+    containingFile: string,
+    options: object,
+    host: object,
+    cache?: unknown,
+    redirectedReference?: undefined,
+    resolutionMode?: number
+  ) => { resolvedModule?: { resolvedFileName: string } };
 };
 
 type JitiExportTarget =
@@ -312,6 +331,158 @@ const buildTsconfigPathAliases = (cwd: string): Record<string, string> => {
   }
 
   return aliases;
+};
+
+const DECLARATION_FILE_RE = /\.d\.[cm]?ts$/;
+const PATH_SEPARATOR_RE = /[\\/]/;
+
+const isPackageLookupDir = (dir: string) => {
+  const segments = dir.split(PATH_SEPARATOR_RE);
+  const index = segments.lastIndexOf('node_modules');
+  const depth = segments.length - 1 - index;
+  return (
+    index !== -1 &&
+    (depth <= 1 || (depth === 2 && segments[index + 1]?.startsWith('@')))
+  );
+};
+
+const getRuntimeConditions = () => {
+  if (process.versions.bun) {
+    return ['bun'];
+  }
+  const conditions = process.execArgv.includes('--no-addons')
+    ? []
+    : ['node-addons'];
+  if ((process.features as { require_module?: boolean }).require_module) {
+    conditions.push('module-sync');
+  }
+  return conditions;
+};
+
+/**
+ * Selects the file a bare request maps to (package `imports`, `exports`,
+ * self-references, workspace packages) whether or not it exists. Package
+ * discovery stays on disk; declaration files never match, since the runtime
+ * ignores `types`. TypeScript loads on first use.
+ */
+export const createMissingModuleResolver = (
+  loadTypeScriptModule: () => TypeScriptModule | null = loadTypeScript
+) => {
+  let resolve:
+    | ((request: string, parentFile: string) => string | undefined)
+    | null
+    | undefined;
+  const init = () => {
+    const typescript = loadTypeScriptModule();
+    if (!typescript) {
+      return null;
+    }
+    const { sys } = typescript;
+    const options = {
+      customConditions: getRuntimeConditions(),
+      module: typescript.ModuleKind.NodeNext,
+      moduleResolution: typescript.ModuleResolutionKind.NodeNext,
+    };
+    const host = {
+      directoryExists: (dir: string) =>
+        !isPackageLookupDir(dir) || sys.directoryExists(dir),
+      fileExists: (fileName: string) =>
+        path.basename(fileName) === 'package.json'
+          ? sys.fileExists(fileName)
+          : !DECLARATION_FILE_RE.test(fileName),
+      getCurrentDirectory: sys.getCurrentDirectory,
+      readFile: sys.readFile,
+      realpath: sys.realpath,
+    };
+    const cache = typescript.createModuleResolutionCache(
+      sys.getCurrentDirectory(),
+      (fileName) =>
+        sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
+      options
+    );
+    return (request: string, parentFile: string) =>
+      typescript.resolveModuleName(
+        request,
+        parentFile,
+        options,
+        host,
+        cache,
+        undefined,
+        typescript.ModuleKind.CommonJS
+      ).resolvedModule?.resolvedFileName;
+  };
+  return (request: string, parentFile: string): string | undefined => {
+    try {
+      if (resolve === undefined) {
+        resolve = null;
+        resolve = init();
+      }
+      return resolve?.(request, parentFile);
+    } catch {
+      return;
+    }
+  };
+};
+
+type MissingModuleFallback = (
+  request: string,
+  parentFile: string | undefined
+) => string | undefined;
+
+type ResolveFilename = (
+  this: unknown,
+  request: string,
+  parent: { filename?: string | null } | undefined,
+  ...rest: unknown[]
+) => string;
+
+const resolvableModule = Module as unknown as {
+  _resolveFilename: ResolveFilename;
+};
+const missingModuleFallbacks = new Set<MissingModuleFallback>();
+let originalResolveFilename: ResolveFilename | undefined;
+
+const installMissingModuleFallback = () => {
+  const resolveFilename = resolvableModule._resolveFilename;
+  originalResolveFilename = resolveFilename;
+  resolvableModule._resolveFilename = function (request, parent, ...rest) {
+    try {
+      return resolveFilename.call(this, request, parent, ...rest);
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException | null)?.code === 'MODULE_NOT_FOUND'
+      ) {
+        for (const fallback of missingModuleFallbacks) {
+          const target = fallback(request, parent?.filename ?? undefined);
+          if (target) {
+            return target;
+          }
+        }
+      }
+      throw error;
+    }
+  };
+};
+
+/**
+ * Jiti resolves through Node's resolver once its own lookup misses, so a
+ * project import of a file that does not exist yet can be pointed elsewhere
+ * until the returned release runs, without writing anything next to it.
+ */
+export const registerMissingModuleFallback = (
+  fallback: MissingModuleFallback
+): (() => void) => {
+  if (!originalResolveFilename) {
+    installMissingModuleFallback();
+  }
+  missingModuleFallbacks.add(fallback);
+  return () => {
+    missingModuleFallbacks.delete(fallback);
+    if (missingModuleFallbacks.size === 0 && originalResolveFilename) {
+      resolvableModule._resolveFilename = originalResolveFilename;
+      originalResolveFilename = undefined;
+    }
+  };
 };
 
 export const getProjectServerParserShimPath = (cwd = process.cwd()) =>
