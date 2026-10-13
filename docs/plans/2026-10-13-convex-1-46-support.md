@@ -1,7 +1,7 @@
 # convex 1.46 support
 
 Objective:
-Support Convex 1.45.x and 1.46.x in kitcn; done when the peer range is `>=1.42 <1.47.0`, pins and fixtures use 1.46.0, the dual-floor type gate and `bun check` pass, and the PR ships.
+Support Convex 1.45.x and 1.46.x in kitcn; done when the peer range is `>=1.42 <1.47.0`, pins and fixtures use 1.46.0, the dual-floor type gate and `bun check` pass (`test:runtime` waived to upstream CI), and PR #484 ships.
 
 Goal plan:
 docs/plans/2026-10-13-convex-1-46-support.md
@@ -17,13 +17,14 @@ Applied packs:
 
 Task source:
 - type: plain task text (support request from a downstream consumer)
-- id / link: N/A: no udecode/kitcn issue; supersedes open PR #458
+- id / link: PR #484 (https://github.com/udecode/kitcn/pull/484); no
+  udecode/kitcn issue; supersedes open PR #458
   (`chore(deps): support convex 1.45.x`, conflicting with main, no review)
 - title: Support Convex 1.45 and 1.46
 - acceptance criteria: kitcn and `@kitcn/resend` declare `convex >=1.42 <1.47.0`;
   scaffolds, example, fixtures and the latest type lane use Convex 1.46.0; the
   1.42 floor stays; `typecheck:convex` passes at 1.42.3 and 1.46.0; `bun check`
-  passes; a changeset ships the delta.
+  passes, with `test:runtime` waived to upstream CI; a changeset ships the delta.
 
 Timed checkpoint:
 - requested duration: N/A: no duration requested
@@ -38,7 +39,7 @@ Completion threshold:
 - Generated pin targets and the eight fixture manifests reference Convex 1.46.0.
 - `bun run typecheck:convex` passes against `convex-min-type-test@1.42.3` and
   `convex-type-test@1.46.0`.
-- `bun check` exits 0.
+- `bun check` lanes pass: `check:ci` and `test:verify` locally; `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver.
 - Task closure is legal only when the source-of-truth acceptance criteria are
   satisfied or explicitly narrowed, required verification evidence is recorded,
   code-review and release-artifact gates are closed when applicable, verified
@@ -102,17 +103,17 @@ Blocked condition:
 Task state:
 - task_type: chore / dependency-support bump (public package boundary)
 - task_complexity: non-trivial
-- current_phase: commit / PR
-- current_phase_status: complete locally; PR not yet opened
-- next_phase: open PR, record its number here
-- goal_status: active until the PR number is recorded
+- current_phase: review / PR #484 (draft)
+- current_phase_status: review fix round applied
+- next_phase: mark PR #484 ready, upstream CI runs `test:runtime`
+- goal_status: active until PR #484 merges
 
 Current verdict:
 - verdict: valid
-- confidence: 95-100%
-- next owner: PR opener (records the PR number in this plan)
-- reason: every declared and generated surface covers 1.46.0; both type floors
-  and `bun check` pass.
+- confidence: 80-94% (`test:runtime` unproven locally, waived to upstream CI)
+- next owner: requesting session (PR #484 ready, upstream CI)
+- reason: every declared and generated surface covers 1.46.0; both type floors,
+  `check:ci` and `test:verify` pass; `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver.
 
 Implementation readiness:
 - verdict: ready
@@ -159,7 +160,7 @@ Start Gates:
 | Skill analysis before edits | yes | `task` + `autogoal` (`package-api` pack); `.agents/rules/changeset.mdc`; `major-task` declined (bump on an existing mechanism) |
 | Active goal checked or created | yes | Goal tools not exposed; this plan is the durable state |
 | Source of truth read before edits | yes | Request; PR #458 body and diff; `328-convex-compatibility-range.md`; `supported-dependencies.ts`; `tooling/dependency-pins.ts` |
-| Exact per-PR task ownership | yes | Not-yet-created single-PR slice on branch `chore/support-convex-1-46`; PR number recorded on creation |
+| Exact per-PR task ownership | yes | PR #484, branch `chore/support-convex-1-46` |
 | GitHub comments and attachments read | yes | PR #458 body read; no issue |
 | Video transcript evidence required | no | N/A: no video |
 | Pre-solution issue challenge required | no | N/A: support request, no bug claim |
@@ -171,7 +172,7 @@ Start Gates:
 | Branch decision for code-changing task | yes | `chore/support-convex-1-46` off `origin/main` 39e89b21 |
 | Release artifact decision | yes | `.changeset/quiet-rivers-widen.md`, patch for `kitcn` and `@kitcn/resend` |
 | Browser tool decision for browser surface | no | N/A: no browser surface |
-| Commit / PR expectation decision | yes | Commit and push to the fork; PR opened by the requesting session |
+| Commit / PR expectation decision | yes | Commit and push to the fork; PR #484 opened by the requesting session |
 | Task-style PR body decision | yes | PR #270 emoji body drafted, supersedes #458 |
 | Task-plan PR body evidence | yes | Body carries `🧭 Task plan: docs/plans/2026-10-13-convex-1-46-support.md` |
 | GitHub issue sync expectation decision | no | N/A: no issue |
@@ -192,8 +193,8 @@ Work Checklist:
 - [x] Task source classified with source type, id/link, title, task type,
       acceptance criteria, caveats, likely files/routes/packages, browser
       surface, and root-cause layer.
-- [x] Every GitHub PR in scope has its own task plan. This plan owns one
-      not-yet-created PR slice; the PR number is recorded on creation.
+- [x] Every GitHub PR in scope has its own task plan. This plan owns exactly
+      one PR: #484.
 - [x] Required video or screen-recording evidence. N/A: none.
 - [x] Reporter claims challenged. N/A: support request with no bug claim;
       validity `valid`.
@@ -207,9 +208,9 @@ Work Checklist:
 - [x] Release artifact requirement recorded: new changeset.
 - [x] Final handoff shape decided: chore handoff, PR body supersedes #458.
 - [x] Commit/PR handling recorded: committed and pushed to fork branch
-      `chore/support-convex-1-46`; PR opened by the requesting session.
+      `chore/support-convex-1-46`; PR #484 opened by the requesting session.
 - [x] PR body shape recorded: PR #270 emoji task-style body drafted.
-- [x] PR task evidence recorded: body names this plan; PR number added on creation.
+- [x] PR task evidence recorded: PR #484 body names this plan; plan names PR #484.
 - [x] Branch handling recorded: dedicated branch `chore/support-convex-1-46`.
 - [x] Local-env-rot retry policy recorded: missing `packages/kitcn/dist` and
       `packages/resend/dist` in a fresh worktree; fixed by package builds, no
@@ -219,7 +220,7 @@ Work Checklist:
 - [x] Output budget discipline recorded and followed.
 - [x] High-risk note recorded (see Open risks).
 - [x] Review/autoreview target selected: `--mode branch --base origin/main`,
-      run by the requesting session's review lanes before the PR opens.
+      run by the requesting session's review lanes on PR #484.
 - [x] Agent-native review decision recorded. N/A: no agent tooling changed.
 - [x] Package/API pack: public API, package boundary, export, and release-artifact impact are recorded.
 - [x] Package/API pack: release artifact matrix applied: `.changeset` created.
@@ -238,12 +239,12 @@ Completion Gates:
 | Gate | Applies | Required action | Evidence |
 |------|---------|-----------------|----------|
 | Named verification threshold | yes | Run the named commands | See Verification evidence |
-| Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | Not-yet-created single-PR slice; PR number recorded on creation |
+| Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | PR #484, owned solely by this plan |
 | Pre-solution issue challenge verdict | no | Record verdict | N/A: support request; validity `valid` |
 | Repro escalation ladder | no | Record ladder | N/A: no bug claim |
 | Bug reproduced before fix | no | Record failing repro | N/A: no bug; new tests red at the 1.44 constant (8 fail) |
 | Targeted behavior verification | yes | Focused test | `bun test packages/kitcn/src/cli/supported-dependencies.test.ts` -> 13 pass / 0 fail |
-| TypeScript or typed config changed | yes | Run typecheck | `bun run typecheck:convex` exit 0 at 1.42.3 and 1.46.0; `bun typecheck` in `bun check` |
+| TypeScript or typed config changed | yes | Run typecheck | `bun run typecheck:convex` exit 0 at 1.42.3 and 1.46.0; `bun typecheck` in `check:ci` |
 | Package exports or file layout changed | no | Run package build | N/A: no export change; `bun --cwd packages/kitcn build` run anyway (72 files) |
 | Package manifests, lockfile, or install graph changed | yes | Run `bun install` | `bun install --frozen-lockfile` passes on the 7-line lockfile edit |
 | Agent rules or skills changed | no | Verify skill sync | N/A: none changed |
@@ -251,7 +252,7 @@ Completion Gates:
 | Browser surface changed | no | Browser proof | N/A: no browser surface |
 | Browser final proof | no | Screenshot | N/A: no browser surface |
 | UI walkthrough | no | Walkthrough | N/A: no UI or rendered output |
-| Scaffold or fixture output changed | yes | `fixtures:sync` + `fixtures:check` | sync exit 0 (separate commit); check passes inside `bun check` |
+| Scaffold or fixture output changed | yes | `fixtures:sync` + `fixtures:check` | sync exit 0 (separate commit); `fixtures:check` passes inside `check:ci` |
 | Package behavior or public API changed | yes | Add a changeset | `.changeset/quiet-rivers-widen.md` |
 | Docs and kitcn skill sync changed | no | Sync docs | N/A: no Convex version pins in docs or the kitcn skill |
 | Docs or content changed | no | Verify docs | N/A: no docs changed |
@@ -259,20 +260,20 @@ Completion Gates:
 | Agent-native review for agent/tooling changes | no | Agent-native review | N/A: no agent tooling changed |
 | Local install corruption suspected | yes | Reinstall and rerun | Missing `dist` in a fresh worktree; package builds fixed it |
 | Commit created | yes | Commit | `chore(deps): support convex 1.45 and 1.46` plus `chore(fixtures): sync convex 1.46.0` |
-| PR create or update | yes | Run `check`, push, open PR | `check:ci` and `test:verify` pass; `test:runtime` blocked by host port 3210; pushed to fork; PR opened by the requesting session |
-| Task-style PR body verified | yes | Verify with `gh pr view --json body` | Drafted in PR #270 format; read back after creation |
-| PR task evidence verified | yes | Verify body plan line, plan at head, exact PR | Plan line in body; plan at head; PR number recorded on creation |
+| PR create or update | yes | Run `check`, push, open PR | `check:ci` and `test:verify` pass; `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver; pushed to fork; PR #484 opened by the requesting session |
+| Task-style PR body verified | yes | Verify with `gh pr view --json body` | PR #484 body in PR #270 format, set by the requesting session |
+| PR task evidence verified | yes | Verify body plan line, plan at head, exact PR | PR #484 body plan line; plan at head names PR #484 |
 | PR proof image hosting | no | Host images | N/A: no images |
 | GitHub issue sync-back | no | Post issue sync | N/A: no issue |
 | Final handoff contract | yes | Fill handoff | See Final handoff contract |
-| Final lint | yes | `bun lint` | `biome check && eslint` clean inside `bun check` |
+| Final lint | yes | `bun lint` | `biome check && eslint` clean inside `check:ci` |
 | Output budget discipline | yes | No unbounded output | Gate output in `/tmp/kitcn-*.txt` |
 | Timed checkpoint | no | Improve until elapsed | N/A: no duration requested |
-| Autoreview for non-trivial implementation changes | yes | Review until no accepted findings | Branch review against `origin/main` by the requesting session before the PR opens |
+| Autoreview for non-trivial implementation changes | yes | Review until no accepted findings | Sol review of PR #484: spec no findings; one standards finding (plan overstated `bun check`), fixed in this commit |
 | Goal plan complete | yes | Run `node .agents/skills/autogoal/scripts/check-complete.mjs docs/plans/2026-10-13-convex-1-46-support.md` | See Verification evidence |
 | Public API / package boundary proof | yes | Source-audit boundary | Only `peerDependencies.convex` widens; no export or type-surface change |
 | Convex bundle/import proof | yes | Audit static graphs | No import change |
-| CLI/scaffold/generated proof | yes | Prove command contract | `test:cli` and `test:verify` inside `bun check`; fixtures regenerated |
+| CLI/scaffold/generated proof | yes | Prove command contract | `test:cli` (in `check:ci`) and `test:verify` pass; fixtures regenerated |
 | Release artifact classification | yes | Classify | Published package delta: wider Convex peer, scaffolded Convex 1.46.0 |
 | Published package changeset | yes | One changeset | `.changeset/quiet-rivers-widen.md` covers `kitcn` and `@kitcn/resend` |
 | No release artifact | no | Reason | N/A: artifact created |
@@ -285,8 +286,8 @@ Phase / pass table:
 |-------|--------|----------|------|
 | Intake and source read | complete | 1.46.0 published; PR #458, #328 doctrine, constant and pins tooling read | implementation |
 | Implementation | complete | Constant to 1.46.0; pins synced; lockfile convex entries only; test sentinels to 1.47.0 plus two in-range cases; changeset | verification |
-| Verification | complete | Dual-floor typecheck, focused test, fixtures sync, `bun check` minus `test:runtime` (host port) | commit |
-| Commit / PR / GitHub sync | complete | Two commits pushed to fork; PR number recorded on creation | closeout |
+| Verification | partial, `test:runtime` waived | Dual-floor typecheck, focused test, fixtures sync, `check:ci`, `test:verify` pass; `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver | commit |
+| Commit / PR / GitHub sync | complete | Commits pushed to fork; draft PR #484 opened | closeout |
 | Closeout | complete | Plan filled | final response |
 
 Findings:
@@ -323,7 +324,9 @@ Implementation notes:
 - `bun tooling/dependency-pins.ts sync --skip-validate` wrote every pin target.
 
 Review fixes:
-- None: review runs after the push.
+- Sol standards [P2]: the plan marked verification complete although `bun check`
+  did not exit 0. Fixed: every `bun check` claim now names `check:ci` and
+  `test:verify` and records the `test:runtime` waiver.
 
 Error attempts:
 | Error / failed attempt | Count | Next different move | Resolution |
@@ -339,9 +342,10 @@ Verification evidence:
 - `bun check` on the pinned `bun@1.3.9`: `check:ci` passed (lint 980 files
   clean; typecheck 5/5; `bun test` 1558 pass / 0 fail; vitest 1081 pass, 14
   skipped; `test:cli` 124 pass; `test:concave`; `fixtures:check`), then
-  `test:verify` passed. `test:runtime` could not start: its first scenario
-  (`expo`) needs port 3210, held on the host by an unrelated Docker Convex
-  backend.
+  `test:verify` passed. `bun check` exit 1: `test:runtime` could not start;
+  its first scenario (`expo`) needs port 3210, held on the host by an
+  unrelated Docker Convex backend. Waiver: not run locally, deferred to
+  upstream CI on PR #484 (requesting session's ruling).
 - Local `bun@1.4.3` fails the same 13 `bun test` cases on unmodified
   `origin/main` (1543 pass / 13 fail there, 1545 / 13 here); all 13 pass on
   `bun@1.3.9`. Runtime drift, not this diff.
@@ -358,21 +362,21 @@ Source-listed case matrix:
 
 Final handoff contract:
 - Commit line: `chore(deps): support convex 1.45 and 1.46`; `chore(fixtures): sync convex 1.46.0`
-- PR line: opened by the requesting session; supersedes #458
+- PR line: PR #484 (draft); supersedes #458
 - Issue line: 🐛 Fixes ➖ N/A
-- Confidence line: 🟢 95-100% confidence
+- Confidence line: 🟡 80-94% confidence (`test:runtime` waived to upstream CI)
 - Flow table:
   - Reproduced: tests ➖ N/A support request, browser ➖ N/A
-  - Verified: tests 🟢 dual-floor `typecheck:convex` and `bun check`, browser ➖ N/A
+  - Verified: tests 🟢 dual-floor `typecheck:convex`, `check:ci` and `test:verify`; `test:runtime` waived to upstream CI; browser ➖ N/A
 - Browser check: N/A: no browser surface
 - Outcome: kitcn supports Convex 1.45.x and 1.46.x; scaffolds use 1.46.0.
-- Caveat: Convex 1.45+ needs Node 20; `_args` slot deprecated upstream.
+- Caveat: Convex 1.45+ needs Node 20; `_args` slot deprecated upstream; `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver.
 - Design:
   - Chosen boundary: `SUPPORTED_CONVEX_VERSION`
   - Why not quick patch: manifests are derived and revert on the next pins sync
   - Why not broader change: `_args` migration is not needed while the slot exists
 - Verified: see Verification evidence
-- PR body verified: read back with `gh pr view --json body` after creation
+- PR body verified: PR #484 body set by the requesting session
 
 Task-style PR body contract:
 - Preserve any existing `<!-- auto-release:start -->` block. If a changeset is
@@ -397,21 +401,25 @@ Task-style PR body contract:
 
 Final handoff / sync:
 - Commit: two commits on `chore/support-convex-1-46`
-- PR: number recorded on creation
+- PR: #484 (draft)
 - Issue: N/A: no issue
 - Browser proof: N/A: no browser surface
-- Caveats: Node 20 floor from Convex 1.45; `_args` deprecation follow-up
+- Caveats: Node 20 floor from Convex 1.45; `_args` deprecation follow-up;
+  `test:runtime` waived to upstream CI
 
 Timeline:
 - 2026-10-13T19:43:12.494Z Task goal plan created.
 - 2026-10-13 Constant bumped, pins synced, lockfile edited, tests updated, changeset added.
-- 2026-10-13 Dual-floor typecheck, fixtures sync and `bun check` passed.
+- 2026-10-13 Dual-floor typecheck, fixtures sync, `check:ci` and `test:verify`
+  passed; `test:runtime` blocked by host port 3210.
+- 2026-10-13 Draft PR #484 opened; Sol review fix round: `test:runtime`
+  recorded as waived to upstream CI.
 
 Reboot status:
 | Question | Answer |
 |----------|--------|
-| Where am I? | Commit / PR |
-| Where am I going? | PR opened, number recorded here |
+| Where am I? | Review fix round on draft PR #484 |
+| Where am I going? | PR #484 ready; upstream CI runs `test:runtime` |
 | What is the goal? | Support Convex 1.45.x and 1.46.x with the 1.42 floor kept |
 | What have I learned? | See Findings |
 | What have I done? | See Timeline |
@@ -423,5 +431,4 @@ Open risks:
   references hit it. Proof: `typecheck:convex` at both floors.
 - Convex 1.45+ requires Node 20; kitcn declares no `engines.node`.
 - `typecheck:convex` is outside `bun check`; run manually here.
-- `test:runtime` not run locally (port 3210 held on the host); upstream CI
-  covers it.
+- `test:runtime` not run locally (port 3210 held on the host by an unrelated backend); deferred to upstream CI by explicit waiver; a runtime regression would surface only there.
