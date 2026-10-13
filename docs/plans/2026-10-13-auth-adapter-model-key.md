@@ -332,7 +332,7 @@ Final handoff contract:
   - Verified: tests 🟢 adapter tests 40/40 on 1.7.1 and 1.7.7; `bun check` adds no failure over main, browser N/A
 - Browser check: N/A: server adapter
 - Outcome: Better Auth 1.7.6+ auth routes no longer fail on `Unexpected field 'modelKey'`.
-- Caveat: better-auth below 1.7.6 never sends `modelKey`; the change is a no-op there.
+- Caveat: kitcn's dev pin (1.7.1) predates `modelKey`, so the 1.7.7 red/green (4 fail on main, 40/40 fixed) was a manual run; the account `issuer` drift at better-auth 1.7.3+ is a separate maintainer follow-up, not fixed here.
 - Design:
   - Chosen boundary: method entry in both adapters.
   - Why not quick patch: patching only the six reported spreads misses dbAdapter's mutation paths.
@@ -366,7 +366,7 @@ Final handoff / sync:
 - PR: open
 - Issue: N/A
 - Browser proof: N/A
-- Caveats: none beyond the 1.7.6 floor above.
+- Caveats: manual 1.7.7 run; `issuer` drift at 1.7.3+ left as a follow-up.
 
 Timeline:
 - 2026-10-13T20:04:59.252Z Task goal plan created.
