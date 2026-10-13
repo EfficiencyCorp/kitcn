@@ -1,3 +1,4 @@
+import * as betterAuthAdapters from 'better-auth/adapters';
 import { getAuthTables } from 'better-auth/db';
 import { convexToJson } from 'convex/values';
 import {
@@ -6,6 +7,11 @@ import {
   handlePagination,
   httpAdapter,
 } from './adapter';
+
+const withoutAdapterFactory = () =>
+  spyOn(betterAuthAdapters, 'createAdapterFactory').mockImplementation(
+    ((factory: any) => (options: any) => factory.adapter({ options })) as any
+  );
 
 describe('handlePagination', () => {
   test('resumes split-recommended pages after the rows they already returned', async () => {
@@ -366,6 +372,84 @@ describe('httpAdapter', () => {
     }
     expect(result.code).toContain('convexTable');
     expect(result.code).not.toContain('defineTable');
+  });
+
+  test('keeps Better Auth modelKey out of Convex function args', async () => {
+    const factory = withoutAdapterFactory();
+    try {
+      const page = {
+        continueCursor: null,
+        isDone: true,
+        page: [{ _id: 'user-1', email: 'a@b.com' }],
+        pageStatus: 'Done' as const,
+      };
+      const runQuery = mock(async (handle: string) =>
+        handle === 'findMany' ? page : null
+      );
+      const runMutation = mock(async () => ({ ...page, count: 1 }));
+      const adapter: any = httpAdapter({ runMutation, runQuery } as any, {
+        authFunctions: {
+          count: 'count',
+          deleteMany: 'deleteMany',
+          findMany: 'findMany',
+          findOne: 'findOne',
+          incrementOne: 'incrementOne',
+          updateMany: 'updateMany',
+        } as any,
+      })({});
+      const modelKey = 'user';
+      const where = [{ connector: 'AND', field: 'email', value: 'a@b.com' }];
+      const orWhere = [
+        { connector: 'OR', field: 'email', value: 'a@b.com' },
+        { connector: 'OR', field: 'email', value: 'c@d.com' },
+      ];
+
+      for (const w of [where, orWhere]) {
+        await adapter.findOne({ model: 'user', modelKey, where: w });
+        await adapter.findMany({
+          limit: 10,
+          model: 'user',
+          modelKey,
+          where: w,
+        });
+        await adapter.count({ model: 'user', modelKey, where: w });
+        await adapter.updateMany({
+          model: 'user',
+          modelKey,
+          update: { name: 'a' },
+          where: w,
+        });
+      }
+      await adapter.deleteMany({ model: 'user', modelKey, where });
+      await adapter.incrementOne({
+        increment: { count: 1 },
+        model: 'rateLimit',
+        modelKey: 'rateLimit',
+        where: [{ connector: 'AND', field: 'key', value: 'sign-in' }],
+      });
+
+      const calls = [
+        ...runQuery.mock.calls,
+        ...runMutation.mock.calls,
+      ] as unknown as [string, any][];
+      expect(new Set(calls.map(([handle]) => handle))).toEqual(
+        new Set([
+          'count',
+          'deleteMany',
+          'findMany',
+          'findOne',
+          'incrementOne',
+          'updateMany',
+        ])
+      );
+      expect(
+        calls
+          .filter(([, args]) => 'modelKey' in { ...args, ...args.input })
+          .map(([handle]) => handle)
+      ).toEqual([]);
+    } finally {
+      factory.mockRestore();
+    }
   });
 
   test('dedupes OR queries by id for findMany and count', async () => {
@@ -944,6 +1028,57 @@ describe('dbAdapter', () => {
       },
     });
     expect('set' in ctx.runMutation.mock.calls[0][1].input).toBe(false);
+  });
+
+  test('keeps Better Auth modelKey out of Convex mutation args', async () => {
+    const factory = withoutAdapterFactory();
+    try {
+      const { ctx } = createMemoryCtx({});
+      ctx.runMutation = mock(async () => ({
+        continueCursor: null,
+        count: 1,
+        isDone: true,
+        page: [],
+      }));
+      const adapter: any = dbAdapter(ctx, {
+        authFunctions: {
+          deleteMany: 'deleteMany',
+          incrementOne: 'incrementOne',
+          updateMany: 'updateMany',
+        } as any,
+        getBetterAuthSchema,
+        schema,
+      })({});
+      const where = [{ connector: 'AND', field: 'email', value: 'a@b.com' }];
+
+      await adapter.deleteMany({ model: 'user', modelKey: 'user', where });
+      await adapter.updateMany({
+        model: 'user',
+        modelKey: 'user',
+        update: { name: 'a' },
+        where,
+      });
+      await adapter.incrementOne({
+        increment: { count: 1 },
+        model: 'rateLimit',
+        modelKey: 'rateLimit',
+        where: [{ connector: 'AND', field: 'key', value: 'sign-in' }],
+      });
+
+      const calls = ctx.runMutation.mock.calls as [string, any][];
+      expect(calls.map(([handle]) => handle)).toEqual([
+        'deleteMany',
+        'updateMany',
+        'incrementOne',
+      ]);
+      expect(
+        calls
+          .filter(([, args]) => 'modelKey' in args.input)
+          .map(([handle]) => handle)
+      ).toEqual([]);
+    } finally {
+      factory.mockRestore();
+    }
   });
 
   test('updateMany and deleteMany reject mixed OR and AND where clauses', async () => {
