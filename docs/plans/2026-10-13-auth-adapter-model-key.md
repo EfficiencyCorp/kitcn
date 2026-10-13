@@ -234,7 +234,7 @@ Work Checklist:
 Completion Gates:
 | Gate | Applies | Required action | Evidence |
 |------|---------|-----------------|----------|
-| Named verification threshold | yes | Run the command, proof, source audit, or artifact check named in this plan | Regression red/green; `bun check` on the pinned bun 1.3.9 (packageManager): install, build:pkg, lint, typecheck, test:bun 1558/0, test:vitest 1081 pass (14 skipped), test:cli 124/0, test:concave, test:verify pass; fixtures:check fails only on "next" fixture `lucide-react` ^1.55.0 to ^1.56.0 registry drift, unrelated to this diff; test:runtime waived to upstream CI (local port 3210 held by another backend). |
+| Named verification threshold | yes | Run the command, proof, source audit, or artifact check named in this plan | Regression red/green; `bun check` on the pinned bun 1.3.9 (packageManager): install, build:pkg, lint, typecheck, test:bun 1558/0, test:vitest 1081 pass (14 skipped), test:cli 124/0, test:concave, test:verify pass; fixtures:check fails only on pre-existing scaffold drift unrelated to this diff (the "next" fixture resolves `lucide-react` ^1.56.0 from the registry against a ^1.55.0 snapshot; not synced here, PR #484 carries it); test:runtime waived to upstream CI (local port 3210 held by another backend). |
 | Exact per-PR task ownership | yes | Record the exact PR and dedicated plan, or the not-yet-created single-PR slice | PR #485, this plan. |
 | Pre-solution issue challenge verdict | yes | Record reporter claim, suggested fix, repro verdict, validity verdict, durable boundary, and hard-stop/pivot decision before implementation | Partially valid; dbAdapter added. |
 | Repro escalation ladder | yes | For bug/behavior claims, record test/source-level, automated browser/integration, Browser, and screenshot/visual-proof outcomes or N/A/blocker reasons before `not reproduced` | Unit tests with the factory stubbed on 1.7.1, plus a real 1.7.7 factory run; browser N/A. |
@@ -312,7 +312,8 @@ Verification evidence:
 - Red (main adapter.ts, pinned 1.7.1): the 2 new tests fail, 38 pass.
 - Green: adapter.test.ts 40 pass, 0 fail.
 - Manual run with better-auth 1.7.7 installed: main fails 4 adapter tests (2 regressions plus the 2 existing exact-args tests), the fix passes 40/40.
-- `bun check` on the pinned bun 1.3.9 (packageManager): install, build:pkg, lint, typecheck, test:bun 1558/0, test:vitest 1081 pass (14 skipped), test:cli 124/0, test:concave, test:verify pass; fixtures:check fails only on "next" fixture `lucide-react` ^1.55.0 to ^1.56.0 registry drift, unrelated to this diff; test:runtime waived to upstream CI (local port 3210 held by another backend).
+- `bun check` on the pinned bun 1.3.9 (packageManager): install, build:pkg, lint, typecheck, test:bun 1558/0, test:vitest 1081 pass (14 skipped), test:cli 124/0, test:concave, test:verify pass; fixtures:check fails only on pre-existing scaffold drift unrelated to this diff (the "next" fixture resolves `lucide-react` ^1.56.0 from the registry against a ^1.55.0 snapshot; not synced here, PR #484 carries it); test:runtime waived to upstream CI (local port 3210 held by another backend).
+- bun 1.3.9 stage table: install 🟢, build:pkg 🟢, lint 🟢, typecheck 🟢, test:bun 🟢 1558/0, test:vitest 🟢 1081 (14 skipped), test:cli 🟢 124/0, test:concave 🟢, fixtures:check 🔴 pre-existing lucide-react registry drift (PR #484), test:verify 🟢, test:runtime ➖ waived to CI.
 - Test files sit outside `turbo typecheck`; `tsc` over adapter.test.ts with a throwaway tsconfig reports no errors in the new code (6 pre-existing errors in older tests, same on main).
 - The earlier run on bun 1.4.3 showed 13 environment failures (all reproduced on clean main); they pass on 1.3.9.
 
