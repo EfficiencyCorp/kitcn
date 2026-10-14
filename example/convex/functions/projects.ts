@@ -3,6 +3,11 @@ import { CRPCError } from 'kitcn/server';
 import * as z from 'zod';
 import { authMutation, authQuery, optionalAuthQuery } from '../lib/crpc';
 import type { Insert, Select } from '../shared/api';
+import {
+  grantProjectAccess,
+  revokeProjectAccess,
+  syncProjectArchived,
+} from './_helpers/project_access';
 import { hasAnyProject } from './_helpers/project_existence';
 import { projectMembersTable, projectsTable } from './schema';
 
@@ -342,6 +347,8 @@ export const create = authMutation
       .values(values)
       .returning();
 
+    await grantProjectAccess(ctx, { project, userId: ctx.userId });
+
     return project.id;
   });
 
@@ -398,6 +405,11 @@ export const archive = authMutation
       .update(projectsTable)
       .set({ archived: true })
       .where(eq(projectsTable.id, input.projectId));
+
+    await syncProjectArchived(ctx, {
+      projectId: input.projectId,
+      archived: true,
+    });
   });
 
 export const restore = authMutation
@@ -419,6 +431,11 @@ export const restore = authMutation
       .update(projectsTable)
       .set({ archived: false })
       .where(eq(projectsTable.id, input.projectId));
+
+    await syncProjectArchived(ctx, {
+      projectId: input.projectId,
+      archived: false,
+    });
   });
 
 export const addMember = authMutation
@@ -466,6 +483,8 @@ export const addMember = authMutation
       projectId: input.projectId,
       userId: userToAdd.id,
     });
+
+    await grantProjectAccess(ctx, { project, userId: userToAdd.id });
   });
 
 export const removeMember = authMutation
@@ -495,6 +514,11 @@ export const removeMember = authMutation
     await ctx.orm
       .delete(projectMembersTable)
       .where(eq(projectMembersTable.id, member.id));
+
+    await revokeProjectAccess(ctx, {
+      projectId: input.projectId,
+      userId: input.userId,
+    });
   });
 
 export const leave = authMutation
@@ -508,6 +532,11 @@ export const leave = authMutation
     await ctx.orm
       .delete(projectMembersTable)
       .where(eq(projectMembersTable.id, member.id));
+
+    await revokeProjectAccess(ctx, {
+      projectId: input.projectId,
+      userId: ctx.userId,
+    });
   });
 
 export const transfer = authMutation
@@ -560,6 +589,21 @@ export const transfer = authMutation
       .update(projectsTable)
       .set({ ownerId: input.newOwnerId })
       .where(eq(projectsTable.id, input.projectId));
+
+    // Both users keep access; only the `isOwner` flag moves. `grantProjectAccess`
+    // derives that flag from the project it is handed, so it has to see the
+    // post-transfer owner. Writing each row from the final state keeps this
+    // correct whatever order the steps above ran in, and re-granting an existing
+    // row is an update, not a duplicate.
+    const transferred = { ...project, ownerId: input.newOwnerId };
+    await grantProjectAccess(ctx, {
+      project: transferred,
+      userId: input.newOwnerId,
+    });
+    await grantProjectAccess(ctx, {
+      project: transferred,
+      userId: ctx.userId,
+    });
   });
 
 export const listForDropdown = authQuery

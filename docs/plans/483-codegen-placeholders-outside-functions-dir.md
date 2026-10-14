@@ -417,3 +417,9 @@ CI follow-up local proof complete:
 - Package typecheck/build, lint and full bun check (fixtures, verify, all runtime scenarios) pass on the repaired tree.
 - Independent cache/cwd ownership/type/simplification reviews are clean. A live-cache probe verifies nonzero cache entries, release rejection, replacement callbacks and edited files with stable same-project namespace.
 - Final autoreview covers this follow-up patch before its normal push. The terminal external receipt supersedes https://github.com/udecode/kitcn/pull/483#issuecomment-6167543813 and binds the new head plus all raw feedback URLs.
+
+## Ready-PR merge follow-up — 2026-10-14
+
+The user authorized merging ready PRs and explicitly waived further review. Main was merged normally after the other ready PRs landed. The only manual conflict resolution preserves both sets of codegen test imports. No history rewrite or new behavior was introduced by the resolution.
+
+Fresh proof on the resolved tree passed: install, root typecheck, package build, lint, and 131 focused codegen/loader/auth tests with 675 assertions. Full `bun check` passed, including 1,102 Vitest tests, all eight fixture comparisons, CLI verify, and runtime scenarios. Evidence is retained under `/tmp/kitcn-pr-merges-20261014/483-*`. Delivery requires a normal fork push, fresh CI at the pushed head, and a guarded merge with external state read-back.

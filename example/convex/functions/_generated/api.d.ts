@@ -32,6 +32,7 @@ export declare const api: {
       "public",
       {
         cursor?: string | null;
+        endCursor?: string | null;
         limit?: number;
         role?: "all" | "user" | "admin";
         search?: string;
@@ -50,6 +51,8 @@ export declare const api: {
           name?: string;
           role: string;
         } | null>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     getDashboardStats: FunctionReference<
@@ -403,7 +406,12 @@ export declare const api: {
     list: FunctionReference<
       "query",
       "public",
-      { cursor?: string | null; includeArchived?: boolean; limit?: number },
+      {
+        cursor?: string | null;
+        endCursor?: string | null;
+        includeArchived?: boolean;
+        limit?: number;
+      },
       {
         continueCursor: string | null;
         isDone: boolean;
@@ -420,6 +428,8 @@ export declare const api: {
           ownerId: string;
           todoCount: number;
         }>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     listForDropdown: FunctionReference<
@@ -612,6 +622,7 @@ export declare const api: {
       "public",
       {
         cursor?: string | null;
+        endCursor?: string | null;
         includeReplies?: boolean;
         limit?: number;
         maxReplyDepth?: number;
@@ -628,6 +639,8 @@ export declare const api: {
           replyCount: number;
           user: { id: string; image?: string | null; name?: string } | null;
         }>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     getUserComments: FunctionReference<
@@ -635,6 +648,7 @@ export declare const api: {
       "public",
       {
         cursor?: string | null;
+        endCursor?: string | null;
         includeTodo?: boolean;
         limit?: number;
         userId: string;
@@ -650,6 +664,8 @@ export declare const api: {
           parentPreview?: { content: string; userName?: string };
           todo?: { completed: boolean; id: string; title: string } | null;
         }>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     updateComment: FunctionReference<
@@ -726,6 +742,7 @@ export declare const api: {
       {
         completed?: boolean;
         cursor?: string | null;
+        endCursor?: string | null;
         limit?: number;
         priority?: "low" | "medium" | "high";
         projectId?: string;
@@ -762,6 +779,8 @@ export declare const api: {
           title: string;
           userId: string;
         }>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     restore: FunctionReference<"mutation", "public", { id: string }, any>;
@@ -771,6 +790,7 @@ export declare const api: {
       {
         completed?: boolean;
         cursor?: string | null;
+        endCursor?: string | null;
         limit?: number;
         projectId?: string;
         query: string;
@@ -807,6 +827,8 @@ export declare const api: {
           title: string;
           userId: string;
         }>;
+        pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+        splitCursor?: string | null;
       }
     >;
     toggleComplete: FunctionReference<
@@ -921,6 +943,12 @@ export declare const internal: {
       aggregateBackfillStatus: FunctionReference<"query", "internal", any, any>;
     };
     auth: {
+      consumeOne: FunctionReference<
+        "mutation",
+        "internal",
+        { input: { model: string; where?: Array<any> } },
+        any
+      >;
       count: FunctionReference<
         "query",
         "internal",
@@ -997,6 +1025,7 @@ export declare const internal: {
             maximumRowsRead?: number;
             numItems: number;
           };
+          select?: Array<string>;
           sortBy?: { direction: "asc" | "desc"; field: string };
           where?: Array<{
             connector?: "AND" | "OR";
@@ -1060,6 +1089,42 @@ export declare const internal: {
         any
       >;
       getLatestJwks: FunctionReference<"action", "internal", {}, any>;
+      incrementOne: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          input: {
+            increment: Record<string, number>;
+            model: string;
+            set?: Record<string, any>;
+            where?: Array<{
+              connector?: "AND" | "OR";
+              field: string;
+              mode?: "sensitive" | "insensitive";
+              operator?:
+                | "lt"
+                | "lte"
+                | "gt"
+                | "gte"
+                | "eq"
+                | "in"
+                | "not_in"
+                | "ne"
+                | "contains"
+                | "starts_with"
+                | "ends_with";
+              value:
+                | string
+                | number
+                | boolean
+                | Array<string>
+                | Array<number>
+                | null;
+            }>;
+          };
+        },
+        any
+      >;
       rotateKeys: FunctionReference<"action", "internal", {}, any>;
       updateMany: FunctionReference<
         "mutation",
