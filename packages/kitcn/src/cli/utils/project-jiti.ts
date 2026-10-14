@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Jiti, JitiOptions, ModuleCache } from 'jiti';
@@ -42,7 +44,6 @@ type TypeScriptModule = {
   sys: {
     directoryExists: (path: string) => boolean;
     fileExists: (path: string) => boolean;
-    getCurrentDirectory: () => string;
     readFile: (path: string) => string | undefined;
     readDirectory: (...args: any[]) => string[];
     realpath?: (path: string) => string;
@@ -381,6 +382,9 @@ export const createMissingModuleResolver = (
       return null;
     }
     const { sys } = typescript;
+    // TypeScript memoizes its own cwd process-wide. A temporary codegen cwd
+    // must not become the default for later compiler calls in this process.
+    const currentDirectory = process.cwd();
     const options = {
       customConditions: getRuntimeConditions(),
       module: typescript.ModuleKind.NodeNext,
@@ -393,12 +397,12 @@ export const createMissingModuleResolver = (
         path.basename(fileName) === 'package.json'
           ? sys.fileExists(fileName)
           : !DECLARATION_FILE_RE.test(fileName),
-      getCurrentDirectory: sys.getCurrentDirectory,
+      getCurrentDirectory: () => currentDirectory,
       readFile: sys.readFile,
       realpath: sys.realpath,
     };
     const cache = typescript.createModuleResolutionCache(
-      sys.getCurrentDirectory(),
+      currentDirectory,
       (fileName) =>
         sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
       options
@@ -708,7 +712,7 @@ export const createProjectJiti = (cwd = process.cwd()) => {
     // requires evicting every watchable project file (realpath outside
     // `node_modules`) at the start of each run.
     moduleCache: false,
-    // Jiti's transform cache omits callback and alias state.
+    // The base transformer must not reuse Jiti's unnamespaced transform cache.
     fsCache: false,
     // Bun-native import bypasses Jiti aliasing for transitive project files.
     // Parse-time CLI imports need Jiti in the loop end-to-end.
@@ -721,8 +725,20 @@ export const createProjectJiti = (cwd = process.cwd()) => {
     },
   };
   const transformer = loadJiti().createJiti(cwd, options);
+  // Jiti's cache omits custom transforms and aliases. Isolate transformed
+  // source by both so callback registration can stay live without recompiling.
+  const transformNamespace = createHash('sha256')
+    .update(
+      JSON.stringify([
+        missingModuleTransform.toString(),
+        MISSING_MODULE_BRIDGE_KEY,
+        options.alias,
+      ])
+    )
+    .digest('hex');
   const jiti = loadJiti().createJiti(cwd, {
     ...options,
+    fsCache: path.join(tmpdir(), 'kitcn-project-jiti', transformNamespace),
     transform: missingModuleTransform(options, (input) =>
       transformer.transform(input)
     ),

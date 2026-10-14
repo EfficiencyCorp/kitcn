@@ -78,11 +78,11 @@ Task state:
 - task_complexity: non-trivial, one package
 - current_phase: closeout
 - current_phase_status: complete
-- next_phase: verify terminal GitHub receipt, then maintainer review
+- next_phase: verify superseding exact-head receipt and required CI
 - goal_status: active
 
 Current verdict:
-- verdict: source repair and local proof complete; exact-head delivery receipt required
+- verdict: CI defects repaired; all pinned and full local checks pass, follow-up delivery required
 - confidence: 95%; native Windows and custom resolver conditions remain unverified
 - next owner: this autoclosure run
 - reason: CI has 13 resolver failures. A fresh single-test run reproduces the failure on Bun 1.3.9 and 1.3.12 after reinstalling dependencies. The global Node resolver hook loses Bun's createRequire parent context.
@@ -259,7 +259,7 @@ Findings:
 - Jiti exposes a transform hook that preserves the importing filename and works on Node and Bun. Its public evaluation API can transform local JavaScript before native execution.
 
 Decisions and tradeoffs:
-- Supported Jiti transformation and evaluation over a global Node resolver patch. Bun loses the createRequire parent when the global resolver is replaced. Transform disk caching is disabled because it omits callback and alias state.
+- Supported Jiti transformation and evaluation over a global Node resolver patch. Bun loses the createRequire parent when the global resolver is replaced. Transform caching uses an isolated namespace keyed by the transform source, bridge URL and aliases; the base transformer cannot reuse Jiti's unnamespaced cache.
 - Content-addressed placeholders under `node_modules/.kitcn/runtime-placeholders`, published atomically, over per-run dirs (jiti cache growth, PID sweeps).
 - Bare requests resolved by TypeScript (a direct dependency) in a selection-only pass, over a hand-written imports/exports resolver.
 
@@ -396,3 +396,24 @@ Final local proof:
 - Final independent review found duplicate default extraction; a failing regression proved it and the single-owner fix passed. No accepted finding remains. Autoreview's P0 threshold was supplemented by the independent wider source review.
 - Root-cause ownership follows Fix Root Causes: replace the resolver hook that breaks Bun. Model the Domain led to one typed module graph per root import. Prove It Works led to Node/Bun execution and fresh co-running Convex measurements.
 - Evidence is retained under `/tmp/kitcn-pr-closure-20261014/483-*` and `watch-scenarios/`; the final terminal PR comment owns the immutable OID and post-push feedback/proof replay.
+
+
+## CI follow-up at head 4d1c71c — 2026-10-14
+
+The first cleanup's required CI did not pass. Three tests failed: two auth type suites could not resolve bun-types/process, and the stale aggregate-server integration exceeded its existing five-second timeout. These are accepted P1 proof failures, not fixture drift or waived environment failures. The first terminal receipt is superseded by this evidence and the new head's external receipt.
+
+Root causes and repairs:
+- The missing-module resolver called `typescript.sys.getCurrentDirectory()` while codegen used a temporary project cwd. TypeScript memoizes that value globally. Later compiler calls inherited the wrong type-resolution directory. Capture `process.cwd()` in the scoped resolver host/cache without touching TypeScript's global memo. A fresh-child regression proves the lookup occurred, then changes back to the repository and compiles a process-using entry with bun-types; original source produces TS2688/process diagnostics, repaired source produces none.
+- Disabling all transform caching repeated Babel compilation during a normal two-codegen integration. The custom-transform instance now uses a namespace keyed by the transform function source, bridge URL and aliases; its base transformer remains uncached. Live callback registration/release is read at execution time, so cache entries do not freeze fallback state. The existing cache-growth proof now observes the actual named cache and requires nonzero entries.
+
+Explain the Number / benchmark-checklist: five alternating runs per side of the unchanged stale-server integration, with all six assertions passing and no errors, measured median 2846.20ms (2751.85–2901.99) uncached versus 1168.52ms (1113.31–1208.10) namespaced cache. A separate debug profile identified repeated Babel compilation as the limiter: 298 transform evaluations, with 216 cache hits and 82 misses in the cached variant. Profile runs are excluded from the timing comparison. The busy 18-core host had load about eight; alternating sides shared that noise. Both generateMeta calls and their output assertions ran inside the timed test. This is the tested CLI integration, not a general performance guarantee. Full artifacts are under `design-bun/benchmark/`. No timeout was increased.
+
+Pinned focused proof: 91 tests / 564 assertions pass. Package typecheck/build and full pinned-Bun / repository gates must pass before the follow-up push. Fresh feedback inventory, all accepted P1 proof replays and a superseding exact-head receipt remain required.
+
+
+CI follow-up local proof complete:
+- Pinned Bun 1.3.9 full suite: 1,573 tests / 4,830 assertions, zero failures. This replays all three previously failing CI tests without changing their timeout.
+- Focused codegen/loader suite: 91 tests / 564 assertions, zero failures; fresh-process TypeScript and actual cache-growth regressions included.
+- Package typecheck/build, lint and full bun check (fixtures, verify, all runtime scenarios) pass on the repaired tree.
+- Independent cache/cwd ownership/type/simplification reviews are clean. A live-cache probe verifies nonzero cache entries, release rejection, replacement callbacks and edited files with stable same-project namespace.
+- Final autoreview covers this follow-up patch before its normal push. The terminal external receipt supersedes https://github.com/udecode/kitcn/pull/483#issuecomment-6167543813 and binds the new head plus all raw feedback URLs.

@@ -9,6 +9,7 @@ import {
   getConvexConfig,
   writeRuntimePlaceholder,
 } from './codegen';
+import { createProjectJiti } from './utils/project-jiti';
 
 const RESERVED_HTTP_NAMESPACE_ERROR = /root "http" namespace is reserved/i;
 const RESERVED_RUNTIME_NAMESPACE_ERROR = /reserved runtime caller namespace/i;
@@ -3133,7 +3134,6 @@ export { httpAction, internalMutation };
       '.kitcn',
       'runtime-placeholders'
     );
-    const jitiCacheDir = path.join(dir, 'node_modules', '.cache', 'jiti');
 
     process.chdir(dir);
     try {
@@ -3146,6 +3146,10 @@ void createModelHelpersCaller;
 ${fs.readFileSync(schemaPath, 'utf8')}`
       );
 
+      const jitiCacheDir = createProjectJiti(dir).options.fsCache;
+      if (typeof jitiCacheDir !== 'string') {
+        throw new Error('project Jiti transform cache must be enabled');
+      }
       const snapshots: Array<{ cache: number; placeholders: string[] }> = [];
       for (let run = 0; run < 3; run++) {
         await generateMeta(undefined, { silent: true });
@@ -3157,6 +3161,7 @@ ${fs.readFileSync(schemaPath, 'utf8')}`
         });
       }
 
+      expect(snapshots[2]?.cache).toBeGreaterThan(0);
       expect(snapshots[2]).toEqual(snapshots[1]);
       expect(snapshots[2]?.placeholders).toEqual(snapshots[0]?.placeholders);
       expect(

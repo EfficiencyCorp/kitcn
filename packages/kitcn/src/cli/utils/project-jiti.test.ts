@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   createMissingModuleResolver,
   createProjectJiti,
@@ -205,6 +205,47 @@ export const values = [helper.count, again.count, helper.cycle, helper.runtime];
       } finally {
         release();
       }
+    } finally {
+      fs.rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test('keeps TypeScript ambient type resolution anchored after a temporary project lookup', () => {
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'kitcn-project-jiti-'))
+    );
+    const entryFile = path.join(dir, 'entry.ts');
+    const runtimeFile = path.join(dir, 'missing.runtime.ts');
+    const rootDir = fileURLToPath(new URL('../../../../../', import.meta.url));
+    fs.writeFileSync(entryFile, 'process.cwd();');
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ imports: { '#runtime': './missing.runtime.ts' } })
+    );
+    try {
+      // A child starts with an untouched TypeScript cwd memo, unlike this suite.
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          '--eval',
+          `import ts from 'typescript';
+import { createMissingModuleResolver } from ${JSON.stringify(new URL('./project-jiti.ts', import.meta.url).href)};
+process.chdir(${JSON.stringify(dir)});
+const target = createMissingModuleResolver()('#runtime', ${JSON.stringify(entryFile)});
+if (target !== ${JSON.stringify(runtimeFile)}) throw new Error('missing runtime lookup did not run');
+process.chdir(${JSON.stringify(rootDir)});
+const program = ts.createProgram([${JSON.stringify(entryFile)}], {
+  types: ['bun-types'], noEmit: true, skipLibCheck: true,
+});
+const diagnostics = ts.getPreEmitDiagnostics(program);
+if (diagnostics.length) {
+  throw new Error(diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\\n')).join('\\n'));
+}`,
+        ],
+        { cwd: rootDir, stdout: 'pipe', stderr: 'pipe' }
+      );
+      expect(result.stderr.toString()).toBe('');
+      expect(result.exitCode).toBe(0);
     } finally {
       fs.rmSync(dir, { force: true, recursive: true });
     }
