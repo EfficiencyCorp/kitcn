@@ -79,7 +79,7 @@ Output budget strategy:
 - Long commands write to `/tmp/kitcn-*.log` and are read with `tail` and `grep`.
 
 Blocked condition:
-- None hit. The PR opens after the caller's review; that is sequencing, not a blocker.
+- Stop only for unavailable external authority or a reproducible environment blocker after different repair attempts. The 2026-10-14 autoclosure run is repairing scaffold drift before rerunning the full gate.
 
 Task state:
 - task_type: bug
@@ -90,10 +90,10 @@ Task state:
 - goal_status: complete
 
 Current verdict:
-- verdict: implemented and verified locally
-- confidence: 95%
+- verdict: source reviewed and full repository gate verified
+- confidence: 95%; external preview authorization remains a service-level limitation
 - next owner: maintainer review and merge
-- reason: PR #480 open with verified body; autoreview clean; plan complete
+- reason: Fresh `bun check` passed, including all fixture comparisons, verification, and live runtime scenarios. Source and review findings are closed.
 
 Implementation readiness:
 - verdict: ready
@@ -396,6 +396,31 @@ Reboot status:
 | What have I done? | See Timeline |
 
 Open risks:
+Current closeout is governed by the 2026-10-14 autoclosure evidence below; historical completion claims do not waive its pending gates.
+
+## Autoclosure, 2026-10-14
+
+- Exact-PR `task` resumed for https://github.com/udecode/kitcn/pull/480 under the user's request to autoclose all remaining open PRs and push cleanup commits.
+- Immutable intake head: `654199957240dfcd4894f9d1a81e02c917a141a9`. Classification: `complete`. The PR body has exactly one task-plan line, this file exists at that head, and it identifies PR #480.
+- Scope: verify generated `consumeOne` and `incrementOne` exports, required source/generated ownership, review feedback, and repository proof. No new auth behavior or API contract.
+- Source review: codegen's procedure entries, emitted exports, auth runtime contracts, generated fixtures, and example API declarations agree. Both additions are internal mutations. No accepted source defect remains.
+- Deslop: repository/source ownership, type-contract, and simplification lenses found no source changes worth making. Accepted the plan finding that earlier completion overstated unavailable runtime proof. `lint:slop:delta --base-ref refs/remotes/kitcn/main --json` reports zero added or worsened findings.
+- Agent-native review: `kitcn codegen` is the same non-interactive route for maintainers and agents; `packages/kitcn/src/cli/codegen.ts` owns generated output; `codegen.test.ts` and fixture regeneration prove that route. No agent rules or skill owners changed in this task.
+- Autoreview: `--mode branch --base refs/remotes/kitcn/main --engine codex` returned no accepted/actionable findings. The helper's P0 threshold does not substitute for the source and type-contract reviews above.
+- Focused proof at the immutable intake head: `bun test packages/kitcn/src/cli/codegen.test.ts` passed 75 tests, 526 assertions.
+- Initial full gate failed at `fixtures:check` because current scaffold output had newer Next.js snapshots. Merged main `6415dc4c3c81d61b1fbc35f29e5caf0ee4e8d76d` without rewriting history, then regenerated through `bun run fixtures:sync`. Six web fixture manifests pick up the registry's `lucide-react` `^1.57.0`; generation owns those edits.
+- Final proof: `bun run build:pkg`, `bun run fixtures:sync`, `bun lint:fix`, and `bun check` all exited 0. The full gate includes lint, source typechecks, unit/integration/CLI/Concave tests, all eight fresh fixture comparisons, `test:verify`, and `test:runtime`. Runtime scenarios started their own local backends successfully; the historical port-3210 blocker no longer applies.
+- The final source patch for `codegen.ts` and `codegen.test.ts` is byte-for-byte identical to the reviewed patch. Cleanup changes only base synchronization, generator-owned fixture manifests, and this proof ledger. No second review was run merely to restate the clean verdict.
+- Goal-plan checker passed after the final evidence update. External exact-head terminal receipt and fresh feedback read-back are recorded on the PR after the authorized cleanup push; no receipt-only branch commit is required.
+
+Feedback ledger at intake:
+| URL | Source | Priority / verdict | Rationale | Proof / owner |
+| --- | --- | --- | --- | --- |
+| https://github.com/udecode/kitcn/pull/480#issuecomment-6089625530 | top-level Vercel status | non-actionable source feedback; external preview authorization | This asks a Vercel team member to authorize a deployment and identifies no defect in generated auth exports. Vercel is not a required merge check. | Vercel team owner; retain the external limitation in the PR receipt |
+| https://github.com/udecode/kitcn/pull/480#issuecomment-6089625691 | top-level changeset status | non-actionable | This reports changeset detection and includes no requested source correction. | Patch changeset inspected |
+| https://github.com/udecode/kitcn/pull/480#issuecomment-6089626710 | top-level review activity | non-actionable | This reports a prior review at `388d217`; it contains no finding and is not proof of this run's head. | Fresh source review and autoreview above |
+
+- Unfiltered intake: 3 top-level comments, 0 reviews, 0 inline threads. Helper: 2 top-level items, 0 review bodies, 0 unresolved threads. The excluded changeset status is ledgered above by content. Actionable priority counts P0/P1/P2/P3: 0/0/0/0. No user deferrals.
 - Deployments running kitcn auth gain two internal functions on their next push; nothing is removed.
 
 Hard closeout guard:
