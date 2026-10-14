@@ -15,11 +15,13 @@ const schema = defineSchema({
   }),
 });
 
-const authApi = createApi(schema, (() => ({})) as any, {
-  getBetterAuthSchema: () =>
-    ({
-      user: { fields: { email: {}, name: {} }, modelName: 'user' },
-    }) as any,
+const authApi = createApi(schema, () => ({}), {
+  getBetterAuthSchema: () => ({
+    user: {
+      fields: { email: { type: 'string' }, name: { type: 'string' } },
+      modelName: 'user',
+    },
+  }),
 });
 
 const modules = {

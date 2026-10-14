@@ -80,7 +80,7 @@ Output budget strategy:
 - Long commands write to `/tmp/kitcn15-*.log` and are read with `tail` and `grep`.
 
 Blocked condition:
-- None hit. Opening the PR and running autoreview are left to the maintainer side for this run; that is sequencing, not a code blocker.
+- Stop only for unavailable external authority or a reproducible environment blocker after different repairs. The 2026-10-14 autoclosure run owns fresh repository proof and the authorized cleanup push.
 
 Task state:
 - task_type: bug
@@ -91,10 +91,10 @@ Task state:
 - goal_status: complete
 
 Current verdict:
-- verdict: implemented and verified locally
-- confidence: 95%
+- verdict: source and cleanup reviewed; full repository proof passed
+- confidence: 95%; external preview authorization remains a service-level limitation
 - next owner: maintainer review and merge
-- reason: PR #481 open with verified body; autoreview clean; plan complete
+- reason: The real-validator regression passes with typed metadata. Package builds, fixture regeneration, and full `bun check`, including live runtime scenarios, passed.
 
 Implementation readiness:
 - verdict: ready
@@ -399,3 +399,27 @@ Hard closeout guard:
 - A local-only final response for verified code-changing work is invalid unless
   this plan records an explicit user decline, no local patch, analytical/
   blocked/inconclusive outcome, or a real commit/PR blocker.
+
+## Autoclosure, 2026-10-14
+
+- Exact-PR `task` resumed for https://github.com/udecode/kitcn/pull/481 under the user's request to autoclose all remaining open PRs and push cleanup commits.
+- Immutable intake head: `66e185041c6b2d444c4d3b4c08de56964e791b05`. Classification: `complete`. The body contains exactly one task-plan line; this file exists at that head and names PR #481.
+- Scope: real Convex validation of `findMany.select`, projected results, package/generated ownership, review feedback, and required proof. No broader auth redesign.
+- Source review: the validator and handler forward `select` consistently. Every pagination return path applies `selectFields`. OR adapters deliberately retain complete documents for deduplication and sorting, then project their result. No accepted behavior defect remains.
+- Accepted cleanup: removed both new `as any` test casts. The test now supplies valid Better Auth field metadata and relies on the auth callback's inferred type. Also removed stale plan wording that left already-completed PR/review work to a maintainer.
+- Focused real-validator test passed both before and after cleanup. The assertion checks that the result contains only the literal selected email field.
+- Deslop ownership, type-contract, and simplification lenses found no other worthwhile changes. Agent-native workflow review is N/A: this changes a server auth query and its test, with no agent workflow, CLI action, or instruction owner.
+- Original-branch autoreview returned no accepted/actionable P0 findings. The required cleanup rerun (`--mode local --engine codex`) also returned clean. It verified that the typed metadata preserves the real Convex validator path and the exact projected-field assertion.
+- Slop delta reports only a directory-fanout increment from colocating one integration test with its auth owner. Rejected restructuring: that count is not a defect, and moving this test away would obscure ownership. No added code-smell finding remains.
+- Merged main `6415dc4c3c81d61b1fbc35f29e5caf0ee4e8d76d` without rewriting history. `bun run build:pkg`, `bun run fixtures:sync`, `bun lint:fix`, and full `bun check` exited 0. Six generator-owned web manifests pick up current `lucide-react` `^1.57.0` snapshots.
+- The full gate includes lint, source typechecks, unit/integration/CLI/Concave tests, all eight fixture comparisons, `test:verify`, and `test:runtime`. Live scenarios started their own local backends successfully; the historical port-3210 blocker no longer applies.
+- Goal-plan checker passed after final evidence was recorded. The exact-head regression replay, terminal receipt, and fresh feedback read-back follow the authorized cleanup push; no receipt-only branch commit is required.
+
+Feedback ledger at intake:
+| URL | Source | Priority / verdict | Rationale | Proof / owner |
+| --- | --- | --- | --- | --- |
+| https://github.com/udecode/kitcn/pull/481#issuecomment-6089630387 | Vercel status | non-actionable source feedback; external preview authorization | This asks a team member to authorize a deployment and reports no query or projection defect. Vercel is not a required merge check. | Vercel team owner |
+| https://github.com/udecode/kitcn/pull/481#issuecomment-6089630895 | changeset status | non-actionable | This reports the patch changeset and contains no source finding or question. | Existing patch changeset inspected |
+| https://github.com/udecode/kitcn/pull/481#issuecomment-6089632175 | review activity | non-actionable | This reports an earlier review at `9ef2000` and contains no finding. It is not this run's current-head review. | Fresh source review and autoreview |
+
+- Unfiltered intake: 3 top-level comments, 0 reviews, 0 inline threads. Helper: 2 top-level items, 0 review bodies, 0 unresolved threads. The omitted changeset item is ledgered by content. Actionable priority counts P0/P1/P2/P3: 0/0/0/0. No user deferrals.
