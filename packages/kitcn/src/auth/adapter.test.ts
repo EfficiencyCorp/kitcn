@@ -515,6 +515,16 @@ describe('httpAdapter', () => {
       ])
     );
     expect(callsCarryingModelKey(calls)).toEqual([]);
+    await adapter.updateMany(
+      withModelKey({
+        model: 'user',
+        update: { modelKey: 'application-value' },
+        where,
+      })
+    );
+    expect(runMutation.mock.calls.at(-1)?.[1]).toMatchObject({
+      input: { update: { modelKey: 'application-value' } },
+    });
   });
   test('dedupes OR queries by id for findMany and count', async () => {
     const runQuery = mock(async (_handle: unknown, args: any) => {

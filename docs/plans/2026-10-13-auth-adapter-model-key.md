@@ -80,14 +80,14 @@ Task state:
 - task_type: bug-fix
 - task_complexity: bounded runtime fix
 - current_phase: closeout
-- current_phase_status: complete; draft PR #485 open, review fix round applied
-- next_phase: final handoff
-- goal_status: complete (plan-only; no native goal)
+- current_phase_status: complete; source/proof complete, terminal delivery verified externally
+- next_phase: verify exact-head external receipt, then maintainer review
+- goal_status: active; prior fixture/runtime waivers revoked
 
 Current verdict:
 - verdict: ready
-- confidence: 80-94%; fix proven, two `bun check` stages left to CI
-- next owner: task
+- confidence: 95%; pinned and 1.7.7 factory proofs plus full local check passed
+- next owner: this autoclosure run
 - reason: the adapters are the only place Better Auth call input meets Convex validators.
 
 Implementation readiness:
@@ -294,7 +294,7 @@ Findings:
 
 Decisions and tradeoffs:
 - Strip `modelKey` at the entry of each spreading method in both adapters rather than at each spread: one line per method covers every spread inside it.
-- `omitModelKey` is typed loosely because better-auth 1.7.1 types do not declare `modelKey`; it compiles on 1.7.1 and 1.7.7.
+- `omitModelKey` accepts optional vendor metadata and infers its omission without casts. The pinned adapter argument fields remain statically checked.
 - Keep the better-auth pin at 1.7.1. The regression stubs `createAdapterFactory` (restored after each test) so the adapters receive the 1.7.6+ input shape; the real 1.7.7 factory run is recorded as manual evidence.
 
 Implementation notes:
@@ -392,3 +392,43 @@ Hard closeout guard:
 - A local-only final response for verified code-changing work is invalid unless
   this plan records an explicit user decline, no local patch, analytical/
   blocked/inconclusive outcome, or a real commit/PR blocker.
+
+
+## Autoclosure audit — 2026-10-14
+
+Intake complete at immutable head `28e2e22f2f679502e96692d5df097d9ec0eac3da`: body plan path exists at that head and names PR #485. This is the resumed dedicated task for PR #485. Main merged normally; fork history retained.
+
+Three independent source/deslop lenses reviewed every HTTP and database adapter argument spread. All six affected HTTP methods and database mutation delegates strip top-level metadata at the adapter boundary. Create, consume, delete-one and update-one construct named-field payloads and already exclude it. No runtime defect was found. The cast-based `T -> T` helper overstated its return shape; cleanup now accepts optional unknown metadata and infers omission without casts. The regression also proves a nested application field named `modelKey` survives.
+
+Fresh red/green proof uses Better Auth 1.7.7's published adapter factory in an isolated Bun preload. Its source confirms the added modelKey argument. An isolated source copy with current-main adapter code fails both metadata regressions with the expected leaked Convex-call list (not a setup exception). The fixed adapter passes all 40 tests / 99 assertions against the pinned 1.7.1 factory and the actual 1.7.7 factory. The repository dependency pin and lock are unchanged by that isolated vendor probe. This verifies this metadata boundary; the pre-existing account issuer/declaration drift is outside the task's stated non-goals and is not claimed fixed.
+
+Hosted CI failed only fixture comparison: `Fixture drift detected in "next"`. Main dependency updates were adopted, snapshots regenerated from source, and all required local gates rerun. The original fixture/runtime waivers are revoked.
+
+Feedback ledger:
+
+| URL | Priority / rationale | Verdict / proof |
+| --- | --- | --- |
+| https://github.com/udecode/kitcn/pull/485#issuecomment-6154388395 | External preview authorization; no source finding | Vercel team owner can authorize; required CI is separate |
+| https://github.com/udecode/kitcn/pull/485#issuecomment-6154393085 | Informational release coverage | Patch changeset retained and package build verified |
+| https://github.com/udecode/kitcn/pull/485#issuecomment-6155209861 | Review quota notice contains no code finding | Independent wider source review and final autoreview run locally |
+
+Fresh raw inventory: 3 comments, 0 reviews, 0 threads; helper 0 threads / 2 comments / 0 review bodies. No actionable item or deferred P2/P3 feedback. Post-push inventory and exact-head terminal receipt remain required.
+
+Ownership and closure matrix:
+- Package: adapter source owns metadata omission; existing patch changeset covers it; types/build and focused suites required.
+- Generated output: no template behavior changed; main merge's dependency snapshots regenerated through fixtures:sync/check.
+- Agent-native: N/A, server-only adapter repair changes no agent tooling or user action route.
+- Docs/published skill: N/A, no setup/config/API change.
+- UI/walkthrough: N/A, no rendered output.
+- Slop delta: no occurrence-level additions or regressions.
+- Review: independent source/type/simplification lenses clean after cast removal; final autoreview supplements, not replaces, those reviews.
+- Final gate/delivery: full bun check including verify/runtime, normal fork push, accurate body, exact-head proof replay and external receipt.
+
+Proof setup recovery: first isolated-main copy lacked the package-local remeda resolution; linked its dependencies to the package workspace and reran. The retained red proof is then the expected modelKey call-list assertion, not that setup failure. A stale wording claim of a known P0 from one reviewer was explicitly corrected; no P0 finding existed.
+
+
+Final local receipts:
+- `bun install`, package types/build, fixture regeneration, lint and full `bun check` passed, including all eight fixture comparisons, actual CLI verify and runtime scenarios. No fixture/runtime waiver remains.
+- Pinned and actual Better Auth 1.7.7 factory runs: 40 tests / 99 assertions pass; current-main isolated adapter: both metadata tests fail with leaked function-call lists.
+- The initial dirty-tree autoreview exited without a verdict; do not treat it as clean. Final frozen branch autoreview is required before push. Evidence under `/tmp/kitcn-pr-closure-20261014/485-*`.
+- Package changeset and task-style body retain the original task scope. Normal push and external terminal receipt bind the final immutable head, full feedback inventory and post-push proof replay.

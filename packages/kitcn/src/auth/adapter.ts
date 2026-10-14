@@ -171,9 +171,9 @@ const parseWhere = (
   }) as ConvexCleanedWhere[];
 };
 
-const omitModelKey = <T extends object>(args: T): T => {
-  const { modelKey: _modelKey, ...rest } = args as T & { modelKey?: string };
-  return rest as T;
+const omitModelKey = <T extends object>(args: T & { modelKey?: unknown }) => {
+  const { modelKey: _modelKey, ...rest } = args;
+  return rest;
 };
 
 type DocWithFlexibleId = {
