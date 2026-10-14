@@ -365,8 +365,9 @@ const RUNTIME_MAP_CASES: RuntimeMapCase[] = [
   },
 ];
 
+const MISSING_MODULE_MESSAGE_RE = /Cannot find (?:module|package)/;
 const toRuntimeMapOutcome = (outcome: string) =>
-  outcome.includes('Cannot find module') ? 'Cannot find module' : outcome;
+  MISSING_MODULE_MESSAGE_RE.test(outcome) ? 'Cannot find module' : outcome;
 
 const runtimeMapCasesFor = (runtime: 'bun' | 'node') =>
   RUNTIME_MAP_CASES.filter(({ only }) => !only || only === runtime);
@@ -3149,7 +3150,9 @@ ${fs.readFileSync(schemaPath, 'utf8')}`
       for (let run = 0; run < 3; run++) {
         await generateMeta(undefined, { silent: true });
         snapshots.push({
-          cache: fs.readdirSync(jitiCacheDir).length,
+          cache: fs.existsSync(jitiCacheDir)
+            ? fs.readdirSync(jitiCacheDir).length
+            : 0,
           placeholders: fs.readdirSync(placeholdersDir).sort(),
         });
       }

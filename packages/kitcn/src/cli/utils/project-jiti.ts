@@ -1,8 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
-import Module, { createRequire } from 'node:module';
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Jiti, JitiOptions, ModuleCache } from 'jiti';
 import { CRPC_BUILDER_STUB_SOURCE } from './crpc-builder-stub.js';
-import { loadJiti } from './lazy-deps.js';
+import { loadBabelParser, loadJiti } from './lazy-deps.js';
 
 const require = createRequire(import.meta.url);
 
@@ -429,58 +432,151 @@ type MissingModuleFallback = (
   parentFile: string | undefined
 ) => string | undefined;
 
-type ResolveFilename = (
-  this: unknown,
-  request: string,
-  parent: { filename?: string | null } | undefined,
-  ...rest: unknown[]
-) => string;
-
-const resolvableModule = Module as unknown as {
-  _resolveFilename: ResolveFilename;
-};
 const missingModuleFallbacks = new Set<MissingModuleFallback>();
-let originalResolveFilename: ResolveFilename | undefined;
+const MISSING_MODULE_BRIDGE_KEY = `kitcn.project-jiti.${import.meta.url}`;
+const missingModuleBridge = Symbol.for(MISSING_MODULE_BRIDGE_KEY);
+const projectImportGraph = new AsyncLocalStorage<{
+  jiti: Jiti;
+  cache: ModuleCache;
+}>();
+const PROJECT_SOURCE_EXTENSION_RE = /\.[cm]?[jt]sx?$/;
+const JAVASCRIPT_SOURCE_EXTENSION_RE = /\.[cm]?jsx?$/;
 
-const installMissingModuleFallback = () => {
-  const resolveFilename = resolvableModule._resolveFilename;
-  originalResolveFilename = resolveFilename;
-  resolvableModule._resolveFilename = function (request, parent, ...rest) {
-    try {
-      return resolveFilename.call(this, request, parent, ...rest);
-    } catch (error) {
-      if (
-        (error as NodeJS.ErrnoException | null)?.code === 'MODULE_NOT_FOUND'
-      ) {
-        for (const fallback of missingModuleFallbacks) {
-          const target = fallback(request, parent?.filename ?? undefined);
-          if (target) {
-            return target;
-          }
-        }
-      }
+type ModuleRequest = Parameters<Jiti['import']>;
+type ModuleLoad = (...args: ModuleRequest) => unknown;
+type ModuleResolver = (...args: ModuleRequest) => string | undefined;
+type ModuleOperation = 'require' | 'import' | 'resolve';
+
+const isProjectSource = (filename: string) =>
+  path.isAbsolute(filename) &&
+  !filename.split(path.sep).includes('node_modules') &&
+  PROJECT_SOURCE_EXTENSION_RE.test(filename);
+
+const isMissingModuleError = (error: unknown) =>
+  error !== null &&
+  typeof error === 'object' &&
+  'code' in error &&
+  (error.code === 'MODULE_NOT_FOUND' || error.code === 'ERR_MODULE_NOT_FOUND');
+
+const resolveRequestAlias = (
+  request: string,
+  aliases: Record<string, string>
+) => {
+  const entries = Object.entries(aliases).sort(
+    ([left], [right]) => right.length - left.length
+  );
+  for (const [alias, target] of entries) {
+    const prefix = alias.endsWith('/') ? alias.slice(0, -1) : alias;
+    if (request === prefix || request.startsWith(`${prefix}/`)) {
+      return `${target}${request.slice(prefix.length)}`;
+    }
+  }
+  return request.startsWith('file:') ? fileURLToPath(request) : request;
+};
+
+const loadWithMissingModuleFallback = (
+  load: ModuleLoad,
+  resolve: ModuleResolver,
+  args: ModuleRequest,
+  parentFile: string | undefined,
+  aliases: Record<string, string>,
+  operation: ModuleOperation
+) => {
+  let resolved: string | undefined;
+  let loadArgs = args;
+  try {
+    resolved = resolve(...args);
+  } catch (error) {
+    const [request, ...rest] = args;
+    if (typeof request !== 'string' || !isMissingModuleError(error)) {
       throw error;
     }
-  };
+    const normalizedRequest = resolveRequestAlias(request, aliases);
+    for (const fallback of missingModuleFallbacks) {
+      const target = fallback(normalizedRequest, parentFile);
+      if (target) {
+        loadArgs = [target, ...rest];
+        resolved = resolve(...loadArgs);
+        break;
+      }
+    }
+    if (!resolved) {
+      throw error;
+    }
+  }
+
+  if (operation === 'resolve' || !resolved) {
+    return load(...loadArgs);
+  }
+  const filename = resolved.startsWith('file:')
+    ? fileURLToPath(resolved)
+    : resolved;
+  const graph = projectImportGraph.getStore();
+  if (
+    graph &&
+    isProjectSource(filename) &&
+    JAVASCRIPT_SOURCE_EXTENSION_RE.test(filename) &&
+    !graph.cache[filename]
+  ) {
+    // Native-first CJS/ESM evaluation can execute side effects before a
+    // missing runtime import fails. Transform project JS before executing it.
+    return graph.jiti.evalModule(fs.readFileSync(filename, 'utf8'), {
+      filename,
+      async: operation === 'import',
+      forceTranspile: true,
+      cache: graph.cache,
+    });
+  }
+  return load(...loadArgs);
+};
+
+const importProjectGraph = (
+  jiti: Jiti,
+  load: ModuleLoad,
+  resolve: ModuleResolver,
+  args: ModuleRequest,
+  operation: 'require' | 'import'
+) => {
+  if (missingModuleFallbacks.size === 0) {
+    return load(...args);
+  }
+  // Jiti propagates this cache through nested modules. Each root import gets
+  // a fresh graph so cycles share exports without hiding later file edits.
+  const cache: ModuleCache = Object.create(null);
+  return projectImportGraph.run({ jiti, cache }, () => {
+    const resolved = resolve(...args);
+    const filename = resolved?.startsWith('file:')
+      ? fileURLToPath(resolved)
+      : resolved;
+    if (!filename || !isProjectSource(filename)) {
+      return load(...args);
+    }
+    return jiti.evalModule(fs.readFileSync(filename, 'utf8'), {
+      filename,
+      async: operation === 'import',
+      forceTranspile: true,
+      cache,
+    });
+  });
 };
 
 /**
- * Jiti resolves through Node's resolver once its own lookup misses, so a
- * project import of a file that does not exist yet can be pointed elsewhere
- * until the returned release runs, without writing anything next to it.
+ * Transformed imports consult fallbacks only after normal resolution fails.
+ * A live callback also covers computed specifiers and release; patching
+ * Node's global resolver loses createRequire's parent under Bun.
  */
 export const registerMissingModuleFallback = (
   fallback: MissingModuleFallback
 ): (() => void) => {
-  if (!originalResolveFilename) {
-    installMissingModuleFallback();
-  }
   missingModuleFallbacks.add(fallback);
+  Object.defineProperty(globalThis, missingModuleBridge, {
+    configurable: true,
+    value: loadWithMissingModuleFallback,
+  });
   return () => {
     missingModuleFallbacks.delete(fallback);
-    if (missingModuleFallbacks.size === 0 && originalResolveFilename) {
-      resolvableModule._resolveFilename = originalResolveFilename;
-      originalResolveFilename = undefined;
+    if (missingModuleFallbacks.size === 0) {
+      Reflect.deleteProperty(globalThis, missingModuleBridge);
     }
   };
 };
@@ -488,8 +584,119 @@ export const registerMissingModuleFallback = (
 export const getProjectServerParserShimPath = (cwd = process.cwd()) =>
   ensureServerParserShim(cwd);
 
-export const createProjectJiti = (cwd = process.cwd()) =>
-  loadJiti().createJiti(cwd, {
+type BabelExpression = ReturnType<
+  ReturnType<typeof loadBabelParser>['parseExpression']
+>;
+type BabelCall = Extract<BabelExpression, { type: 'CallExpression' }>;
+type BabelCallPath = {
+  node: BabelCall;
+  scope: {
+    getBinding: (name: string) => unknown;
+    rename: (name: string) => void;
+  };
+};
+
+const missingModuleTransform =
+  (
+    options: JitiOptions,
+    transform: Jiti['transform']
+  ): NonNullable<JitiOptions['transform']> =>
+  (input) => ({
+    code: transform({
+      ...input,
+      babel: {
+        ...input.babel,
+        plugins: [
+          ...(input.babel?.plugins ?? []),
+          () => ({
+            visitor: {
+              Program: {
+                exit(program: {
+                  traverse: (visitors: {
+                    CallExpression: (call: BabelCallPath) => void;
+                  }) => void;
+                }) {
+                  program.traverse({
+                    CallExpression({ node, scope }) {
+                      const callee = node.callee;
+                      if (
+                        callee.type !== 'Identifier' &&
+                        callee.type !== 'MemberExpression'
+                      ) {
+                        return;
+                      }
+                      let name: string | undefined;
+                      if (callee.type === 'Identifier') {
+                        name = callee.name;
+                      } else if (
+                        callee.type === 'MemberExpression' &&
+                        !callee.computed &&
+                        callee.object.type === 'Identifier' &&
+                        callee.object.name === 'require' &&
+                        callee.property.type === 'Identifier' &&
+                        callee.property.name === 'resolve'
+                      ) {
+                        name = 'require';
+                      }
+                      if (
+                        !name ||
+                        !['require', 'jitiImport', 'jitiESMResolve'].includes(
+                          name
+                        ) ||
+                        scope.getBinding(name)
+                      ) {
+                        return;
+                      }
+                      const args = node.arguments.filter(
+                        (argument) => argument.type !== 'ArgumentPlaceholder'
+                      );
+                      if (args.length !== node.arguments.length) {
+                        return;
+                      }
+                      for (const globalName of ['Symbol', 'globalThis']) {
+                        if (scope.getBinding(globalName)) {
+                          scope.rename(globalName);
+                        }
+                      }
+                      let operation: ModuleOperation = 'require';
+                      if (name === 'jitiImport') {
+                        operation = 'import';
+                      } else if (
+                        callee.type === 'MemberExpression' ||
+                        name === 'jitiESMResolve'
+                      ) {
+                        operation = 'resolve';
+                      }
+                      const resolver =
+                        operation === 'import' || name === 'jitiESMResolve'
+                          ? 'jitiESMResolve'
+                          : 'require.resolve';
+                      node.callee = loadBabelParser().parseExpression(`
+                        (function(load, args, resolve) {
+                          const bridge = globalThis[Symbol.for(${JSON.stringify(MISSING_MODULE_BRIDGE_KEY)})];
+                          return typeof bridge === 'function'
+                            ? bridge(load, resolve, args, ${JSON.stringify(input.filename)}, ${JSON.stringify(options.alias ?? {})}, ${JSON.stringify(operation)})
+                            : load(...args);
+                        })
+                      `);
+                      node.arguments = [
+                        callee,
+                        { type: 'ArrayExpression', elements: args },
+                        loadBabelParser().parseExpression(resolver),
+                      ];
+                    },
+                  });
+                },
+              },
+            },
+          }),
+        ],
+      },
+    }),
+  });
+
+export const createProjectJiti = (cwd = process.cwd()) => {
+  const options: JitiOptions = {
     interopDefault: true,
     jsx: {
       runtime: 'automatic',
@@ -501,6 +708,8 @@ export const createProjectJiti = (cwd = process.cwd()) =>
     // requires evicting every watchable project file (realpath outside
     // `node_modules`) at the start of each run.
     moduleCache: false,
+    // Jiti's transform cache omits callback and alias state.
+    fsCache: false,
     // Bun-native import bypasses Jiti aliasing for transitive project files.
     // Parse-time CLI imports need Jiti in the loop end-to-end.
     tryNative: false,
@@ -510,4 +719,43 @@ export const createProjectJiti = (cwd = process.cwd()) =>
       ...buildLocalPackageExportAliases(cwd, 'convex'),
       'kitcn/server': getProjectServerParserShimPath(cwd),
     },
+  };
+  const transformer = loadJiti().createJiti(cwd, options);
+  const jiti = loadJiti().createJiti(cwd, {
+    ...options,
+    transform: missingModuleTransform(options, (input) =>
+      transformer.transform(input)
+    ),
   });
+  return Object.assign(
+    (id: string) =>
+      importProjectGraph(
+        jiti,
+        jiti,
+        (request) => jiti.resolve(request),
+        [id],
+        'require'
+      ),
+    jiti,
+    {
+      async import<T = unknown>(...args: ModuleRequest): Promise<T> {
+        const result = await importProjectGraph(
+          jiti,
+          (request, requestOptions) =>
+            jiti.import(request, { ...requestOptions, default: undefined }),
+          (...requests) => jiti.esmResolve(...requests),
+          args,
+          'import'
+        );
+        return (
+          args[1]?.default &&
+          result !== null &&
+          (typeof result === 'object' || typeof result === 'function') &&
+          'default' in result
+            ? (result.default ?? result)
+            : result
+        ) as T;
+      },
+    }
+  );
+};

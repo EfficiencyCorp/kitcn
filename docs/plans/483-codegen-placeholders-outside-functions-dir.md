@@ -13,7 +13,9 @@ Primary template:
 docs/plans/templates/task.md
 
 Applied packs:
-- none
+- autoclosure: exact-head intake, feedback inventory, proof replay, external receipt
+- package: changeset, build, types, generated output
+- agent-native: CLI loading, deterministic errors, source ownership
 
 Task source:
 - type: single-PR task (no upstream issue)
@@ -76,14 +78,14 @@ Task state:
 - task_complexity: non-trivial, one package
 - current_phase: closeout
 - current_phase_status: complete
-- next_phase: maintainer review
-- goal_status: complete
+- next_phase: verify terminal GitHub receipt, then maintainer review
+- goal_status: active
 
 Current verdict:
-- verdict: fixed
-- confidence: 90%
-- next owner: maintainer
-- reason: regression tests, mutation table and repro all pass; stated limits recorded.
+- verdict: source repair and local proof complete; exact-head delivery receipt required
+- confidence: 95%; native Windows and custom resolver conditions remain unverified
+- next owner: this autoclosure run
+- reason: CI has 13 resolver failures. A fresh single-test run reproduces the failure on Bun 1.3.9 and 1.3.12 after reinstalling dependencies. The global Node resolver hook loses Bun's createRequire parent context.
 
 Implementation readiness:
 - verdict: ready
@@ -228,10 +230,10 @@ Completion Gates:
 | Docs and kitcn skill sync changed | N/A | Keep `www/**` and `packages/kitcn/skills/kitcn/**` in sync, or record N/A | no docs change |
 | Docs or content changed | N/A | For docs-heavy work, use `--template docs`; for incidental docs, verify source-backed claims, links, examples, and rendered output or record N/A | no docs change |
 | High-risk mini gate | yes | For public API/runtime/package-boundary/browser/agent-action/command-contract changes, record realistic failure mode, proof plan, and why the chosen boundary is right; otherwise N/A | failure mode: a missing runtime import that resolved on main falls through; proof: map-case table on Node and Bun, mutation table; boundary: resolver-time redirect during codegen only |
-| Agent-native review for agent/tooling changes | N/A | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | no agent/tooling files |
+| Agent-native review for agent/tooling changes | yes | For `.agents/**`, `.claude/**`, `.codex/**`, skills, hooks, commands, prompts, or user-action tooling, load `.agents/skills/agent-native-reviewer/SKILL.md` and close accepted/actionable findings, or record N/A | CLI user-action route audited: source-owned placeholders, unchanged command flags/output/errors, machine-readable routes preserved |
 | Local install corruption suspected | yes | Run `bun install` once, rerun the exact failing command, or record N/A | `bun install` run once; remaining local failures match main exactly |
 | Commit created | yes | For verified code-changing work, stage the entire current checkout per repo policy and create a commit; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | see PR head |
-| PR create or update | yes | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | PR #483; local `bun check` has environment-only failures identical on main, hosted CI is the gate |
+| PR create or update | yes | For verified code-changing work, run `check`, push, create or update the PR, and sync PR body to the task-style final handoff; N/A only for no local patch, explicit user decline, analytical/blocked/inconclusive work, or recorded external blocker | PR #483; fresh full `bun check` required by autoclosure; prior environment waiver revoked |
 | Task-style PR body verified | yes | Verify the PR body with `gh pr view --json body`; it must preserve auto-release blocks when applicable, must not include a current-PR self-link, and must use the PR #270 emoji format: `🐛 Fixes ...`, `🟢 95-100% confidence`, `Phase / 🧪 Tests / 🌐 Browser` table, and bold emoji Outcome/Caveat/Design/Verified sections | `gh pr view --json body` read back |
 | PR task evidence verified | yes | Verify body plan line, plan at PR head, and exact PR ownership | plan line, plan at head, PR #483 |
 | PR proof image hosting | N/A | If PR body needs browser proof, replace local image paths with hosted GitHub URLs or record N/A | no images |
@@ -254,10 +256,10 @@ Phase / pass table:
 
 Findings:
 - Placeholders exist because user modules import `./generated/<module>.runtime` before it is generated; jiti must resolve them during the schema and parse passes.
-- jiti falls back to Node's resolver (`nativeRequire.resolve`) after its own lookup misses; that is the only hook that sees relative specifiers.
+- Jiti exposes a transform hook that preserves the importing filename and works on Node and Bun. Its public evaluation API can transform local JavaScript before native execution.
 
 Decisions and tradeoffs:
-- Scoped `Module._resolveFilename` fallback only on `MODULE_NOT_FOUND`, over a jiti transform rewrite (fsCache would serve stale rewrites) or jiti aliases (raw-prefix match cannot target relative imports).
+- Supported Jiti transformation and evaluation over a global Node resolver patch. Bun loses the createRequire parent when the global resolver is replaced. Transform disk caching is disabled because it omits callback and alias state.
 - Content-addressed placeholders under `node_modules/.kitcn/runtime-placeholders`, published atomically, over per-run dirs (jiti cache growth, PID sweeps).
 - Bare requests resolved by TypeScript (a direct dependency) in a selection-only pass, over a hand-written imports/exports resolver.
 
@@ -273,7 +275,7 @@ Error attempts:
 | First cut shadowed `.runtime.js` imports on Node | 1 | check real candidates first | fixed |
 
 Verification evidence:
-- Final: `bun test` 1554 pass / 13 fail, identical fail list on main (environment-only); vitest 102 files pass; `test:cli` failures identical on main; typecheck and lint exit 0.
+- Original author reported 13 local failures as environment-only. Autoclosure reproduced a PR defect on Bun 1.3.9 and 1.3.12 after reinstalling; that report is superseded by fresh proof below.
 - Repro (kitcn init -t vite, convex dev --local): no-change codegen 1 push -> 0 (default), 2 -> 0 (500 modules); kitcn dev edit at 500 modules 2 -> 1.
 
 Source-listed case matrix:
@@ -347,3 +349,50 @@ Hard closeout guard:
 - A local-only final response for verified code-changing work is invalid unless
   this plan records an explicit user decline, no local patch, analytical/
   blocked/inconclusive outcome, or a real commit/PR blocker.
+
+
+## Autoclosure audit — 2026-10-14
+
+Intake: complete at immutable PR head `dd2cb90e3c42a7d900d53d1f1a3db7abdded6d22`; the body has one plan path, that file exists at the head, and it owns PR #483. Task resumed for this PR only. Main was merged without rewriting the fork history.
+
+Source review found a P1 defect: replacing `Module._resolveFilename` loses Bun's createRequire parent. An installed `jiti` package then fails to resolve. A single-test repro fails after `bun install` on Bun 1.3.9 and 1.3.12; hosted CI's 13 resolver failures have the same cause. This invalidates the original environment-only explanation.
+
+Supported Jiti APIs own the repair. The transform retains parent filenames, computed requests, aliases, synchronous requires, asynchronous imports, and resolver-only calls. Project bindings are renamed hygienically before injected global references. Public evaluation handles local JavaScript before native execution so fallback cannot execute side effects twice. Module graphs preserve cycles and repeated imports while a later root import reads fresh source.
+
+Three independent design probes compared public transforms, TypeScript resolution, and Bun hooks. Bun plugins cannot cover bare package specifiers or unregister an individual hook; private Jiti context injection is not a supported contract. Three independent deslop lenses then found and closed lexical-global capture and resolver-only gaps; the native-JavaScript execution regression received a dedicated failing test before repair. Generic fallback callbacks may decline any candidate; the codegen callback independently refuses every existing runtime file, preserving original errors.
+
+Feedback ledger (raw sources include bot/author comments, reviews, and every resolved/outdated thread):
+
+| URL | Priority / rationale | Verdict / proof |
+| --- | --- | --- |
+| https://github.com/udecode/kitcn/pull/483#issuecomment-6108545885 | Non-actionable: review quota notice contains no source finding | Independent source/deslop review and local autoreview replace unavailable hosted review |
+| https://github.com/udecode/kitcn/pull/483#issuecomment-6108545987 | External deployment authorization, no code defect | Vercel team owner can authorize preview; required CI and local runtime proof remain required |
+| https://github.com/udecode/kitcn/pull/483#issuecomment-6108546003 | Informational release coverage | Patch changeset retained; merged-main released changesets reconciled |
+
+Fresh inventory before push: helper 0 threads / 2 top-level comments / 0 review bodies; unfiltered 3 comments / 0 reviews / 0 threads. No actionable feedback or deferred P2/P3 item. The P1 Bun defect and accepted local review findings are repaired within this task, not waived. Post-push replay and terminal receipt must name the final OID.
+
+Closure ownership:
+
+| Lane | Owner / proof | Verdict |
+| --- | --- | --- |
+| Package behavior | CLI source and existing patch changeset; package build/types and resolver suites | Passed: focused/pinned suites, package build/types and full check |
+| Generated output | Content-addressed atomic cache files outside functionsDir; fs-write regression | Focused proof passed |
+| Agent action | `kitcn codegen` / `kitcn dev` CLI remains non-interactive with unchanged flags and output; source-owned runtime loading | Reviewed |
+| Docs / published skill | Internal resolver repair adds no user configuration or API | N/A |
+| UI walkthrough | CLI-only, no rendered output | N/A |
+| Fixtures / scenarios | Main merge carries dependency updates; regenerate fixtures from package source and run all runtime checks | Passed: focused/pinned suites, package build/types and full check |
+| Review / deslop | Independent source lenses, slop delta, final autoreview | Passed: focused/pinned suites, package build/types and full check |
+| Repository check / delivery | Full `bun check`, normal push, body read-back, exact-head external receipt | Normal push and terminal receipt verified externally against final OID |
+
+Slop delta: error-obscuring catch warnings refer to optional tsconfig/TypeScript selection, which intentionally falls through to the original resolver error. No internal error is silently treated as successful parsing. These warnings are dismissed with source evidence. The CLI driver and package-map tests cover the observable error path.
+
+
+Final local proof:
+- `bun install`, package typecheck/build, fixture regeneration and `bun lint:fix` passed.
+- Full `bun check` passed, including eight fixture comparisons, real CLI verify, and runtime scenarios.
+- CI-pinned Bun 1.3.9: 90 focused codegen/loader tests and 561 assertions passed after the final default-extraction fix; the suite includes Node subprocess map cases.
+- Node 24.14.1 and Bun graph probes passed CJS cycles, repeated imports, callable loading, async MJS, fresh file edits, conditional maps and release behavior.
+- Fresh built CLI with anonymous local Convex 1.46 on owned ports 3225/3226: three no-change runs each produced zero recursive directory events, zero changed files among 15 baseline files, and zero extra watcher-ready messages. Owned processes stopped; ports verified clear. Bare-app init is unsupported, so the supported standalone codegen route was used. An initial invalid helper name was corrected before baseline; recovery logs retained. A second already-running bounded measurement also passed; it adds no required gate.
+- Final independent review found duplicate default extraction; a failing regression proved it and the single-owner fix passed. No accepted finding remains. Autoreview's P0 threshold was supplemented by the independent wider source review.
+- Root-cause ownership follows Fix Root Causes: replace the resolver hook that breaks Bun. Model the Domain led to one typed module graph per root import. Prove It Works led to Node/Bun execution and fresh co-running Convex measurements.
+- Evidence is retained under `/tmp/kitcn-pr-closure-20261014/483-*` and `watch-scenarios/`; the final terminal PR comment owns the immutable OID and post-push feedback/proof replay.

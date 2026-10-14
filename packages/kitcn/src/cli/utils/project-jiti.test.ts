@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   createMissingModuleResolver,
   createProjectJiti,
@@ -75,6 +76,135 @@ export const values = [missing, present];`
       await expect(createProjectJiti(dir).import(entryFile)).rejects.toThrow(
         './missing'
       );
+    } finally {
+      fs.rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test('preserves computed requests, normal requires, and scoped fallback release', async () => {
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'kitcn-project-jiti-'))
+    );
+    const entryFile = path.join(dir, 'entry.ts');
+    const fallbackFile = path.join(dir, 'fallback.ts');
+    fs.writeFileSync(fallbackFile, 'export const value = "fallback";');
+    fs.writeFileSync(
+      entryFile,
+      `const Symbol = 'local symbol';
+const globalThis = 'local global';
+const name = './missing';
+const sync = require(name);
+const ordinary = require('node:path').basename('/a/b');
+export const paths = [require.resolve(name), import.meta.resolve(name)];
+export const failure = await import('./absent').catch(() => 'caught');
+export const values = [sync.value, (await import(name)).value, ordinary, Symbol, globalThis];`
+    );
+    const releaseUnused = registerMissingModuleFallback(() => undefined);
+    const release = registerMissingModuleFallback((request, parentFile) =>
+      request === './missing' && parentFile === entryFile
+        ? fallbackFile
+        : undefined
+    );
+    try {
+      releaseUnused();
+      const jiti = createProjectJiti(dir);
+      const module = await jiti.import<{
+        values: string[];
+        paths: string[];
+        failure: string;
+      }>(entryFile);
+      expect(module.values).toEqual([
+        'fallback',
+        'fallback',
+        'b',
+        'local symbol',
+        'local global',
+      ]);
+      expect(module.paths).toEqual([
+        fallbackFile,
+        pathToFileURL(fallbackFile).href,
+      ]);
+      expect(module.failure).toBe('caught');
+      release();
+      await expect(jiti.import(entryFile)).rejects.toThrow('./missing');
+    } finally {
+      releaseUnused();
+      release();
+      fs.rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test('loads JavaScript helpers once per import graph before resolving missing runtimes', async () => {
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'kitcn-project-jiti-'))
+    );
+    const entryFile = path.join(dir, 'entry.ts');
+    const fallbackFile = path.join(dir, 'fallback.ts');
+    const counterFile = path.join(dir, 'counter.txt');
+    fs.writeFileSync(fallbackFile, 'export const value = "fallback";');
+    fs.writeFileSync(
+      path.join(dir, 'helper.cjs'),
+      `const fs = require('node:fs');
+const counter = ${JSON.stringify(counterFile)};
+const count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) + 1 : 1;
+fs.writeFileSync(counter, String(count));
+exports.count = count;
+exports.runtime = require('./missing').value;
+exports.cycle = require('./cycle.cjs').count;`
+    );
+    fs.writeFileSync(
+      path.join(dir, 'cycle.cjs'),
+      "exports.count = require('./helper.cjs').count;"
+    );
+    fs.writeFileSync(
+      entryFile,
+      `import * as helper from './helper.cjs';
+import * as again from './helper.cjs';
+export const values = [helper.count, again.count, helper.cycle, helper.runtime];`
+    );
+    const release = registerMissingModuleFallback((request) =>
+      request === './missing' ? fallbackFile : undefined
+    );
+    try {
+      const jiti = createProjectJiti(dir);
+      expect(await jiti.import(entryFile)).toEqual({
+        values: [1, 1, 1, 'fallback'],
+      });
+      expect(fs.readFileSync(counterFile, 'utf8')).toBe('1');
+      expect(await jiti.import(entryFile)).toEqual({
+        values: [2, 2, 2, 'fallback'],
+      });
+      expect(fs.readFileSync(counterFile, 'utf8')).toBe('2');
+    } finally {
+      release();
+      fs.rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test('unwraps default exports exactly once with and without active fallbacks', async () => {
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'kitcn-project-jiti-'))
+    );
+    const entryFile = path.join(dir, 'entry.ts');
+    fs.writeFileSync(
+      entryFile,
+      "export default { default: 'inner', value: 'outer' };"
+    );
+    try {
+      const jiti = createProjectJiti(dir);
+      expect(await jiti.import(entryFile, { default: true })).toEqual({
+        default: 'inner',
+        value: 'outer',
+      });
+      const release = registerMissingModuleFallback(() => undefined);
+      try {
+        expect(await jiti.import(entryFile, { default: true })).toEqual({
+          default: 'inner',
+          value: 'outer',
+        });
+      } finally {
+        release();
+      }
     } finally {
       fs.rmSync(dir, { force: true, recursive: true });
     }
