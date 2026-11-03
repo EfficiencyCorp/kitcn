@@ -2179,18 +2179,13 @@ export interface ConvexTableFn extends ConvexTableFnInternal {
   withRLS: ConvexTableFnInternal;
 }
 
-const convexTableInternal: ConvexTableFnInternal = (
-  name,
-  columns,
-  extraConfig
+const buildConvexTable = (
+  name: string,
+  columns: Record<string, unknown>,
+  extraConfig: ((table: any) => any) | undefined,
+  self: object
 ): ConvexTableWithColumns<
-  {
-    name: typeof name;
-    columns: ColumnsWithTableName<
-      ExpandTableColumns<typeof columns>,
-      typeof name
-    >;
-  },
+  any,
   any,
   any,
   any,
@@ -2237,20 +2232,136 @@ const convexTableInternal: ConvexTableFnInternal = (
     writable: false,
   });
 
-  applyExtraConfig(rawTable, extraConfig?.(table));
+  // Column builders point at the public table object (the lazy proxy), so
+  // identity checks and foreign-key targets match the schema entry.
+  for (const builder of Object.values(systemFields)) {
+    (builder as any).config.table = self;
+  }
+  for (const builder of Object.values(rawTable[Columns] as object)) {
+    (builder as any).config.table = self;
+  }
 
   return table as any;
 };
+
+type LazyTableStats = { created: number; materialized: number; names: string[] };
+const lazyTableStats = (): LazyTableStats => {
+  const g = globalThis as { __kitcnLazyTables?: LazyTableStats };
+  g.__kitcnLazyTables ??= { created: 0, materialized: 0, names: [] };
+  return g.__kitcnLazyTables;
+};
+
+/**
+ * Lazy table: `convexTable()` returns a proxy and defers column resolution,
+ * validator construction, system fields and extra config (indexes, foreign
+ * keys, checks) until the first access that needs them. The table name and
+ * the brand answer without building.
+ */
+const createLazyTable = (
+  name: string,
+  columns: Record<string, unknown>,
+  extraConfig: ((table: any) => any) | undefined,
+  withRls: boolean
+) => {
+  validateTableName(name);
+  // Cheap definition-time checks stay eager.
+  for (const columnName of Object.keys(columns)) {
+    if (RESERVED_COLUMN_NAMES.has(columnName)) {
+      throw new Error(
+        `Column name '${columnName}' is reserved. System fields are managed by Convex ORM.`
+      );
+    }
+  }
+  let real: any;
+  let building = false;
+  const stats = lazyTableStats();
+  stats.created++;
+  const target = Object.create(ConvexTableImpl.prototype);
+  let proxy: any;
+  const materialize = () => {
+    if (real) return real;
+    if (building) {
+      throw new Error(`convexTable('${name}') accessed itself while building.`);
+    }
+    building = true;
+    try {
+      const table = buildConvexTable(name, columns, undefined, proxy);
+      if (withRls) table[EnableRLS] = true;
+      real = table;
+      applyExtraConfig(proxy, extraConfig?.(proxy));
+    } catch (error) {
+      real = undefined;
+      throw error;
+    } finally {
+      building = false;
+    }
+    stats.materialized++;
+    stats.names.push(name);
+    return real;
+  };
+  const cheap = (key: PropertyKey): { hit: boolean; value?: unknown } => {
+    if (key === 'tableName' || key === TableName) return { hit: true, value: name };
+    if (key === Brand) return { hit: true, value: 'ConvexTable' };
+    return { hit: false };
+  };
+  proxy = new Proxy(target, {
+    get(_t, key) {
+      if (!real) {
+        const c = cheap(key);
+        if (c.hit) return c.value;
+      }
+      return Reflect.get(materialize(), key);
+    },
+    set(_t, key, value) {
+      return Reflect.set(materialize(), key, value);
+    },
+    has(_t, key) {
+      if (!real && (key === 'tableName' || key === TableName || key === Brand || key === Columns)) {
+        return true;
+      }
+      return Reflect.has(materialize(), key);
+    },
+    ownKeys() {
+      return Reflect.ownKeys(materialize());
+    },
+    getOwnPropertyDescriptor(_t, key) {
+      const d = Reflect.getOwnPropertyDescriptor(materialize(), key);
+      if (d) d.configurable = true;
+      return d;
+    },
+    defineProperty(_t, key, descriptor) {
+      return Reflect.defineProperty(materialize(), key, descriptor);
+    },
+    deleteProperty(_t, key) {
+      return Reflect.deleteProperty(materialize(), key);
+    },
+  });
+  return proxy;
+};
+
+const convexTableInternal: ConvexTableFnInternal = (
+  name,
+  columns,
+  extraConfig
+) =>
+  createLazyTable(
+    name,
+    columns as Record<string, unknown>,
+    extraConfig as any,
+    false
+  ) as any;
 
 const convexTableWithRLS: ConvexTableFnInternal = (
   name,
   columns,
   extraConfig
-) => {
-  const table = convexTableInternal(name, columns, extraConfig);
-  (table as any)[EnableRLS] = true;
-  return table;
-};
+) =>
+  createLazyTable(
+    name,
+    columns as Record<string, unknown>,
+    extraConfig as any,
+    true
+  ) as any;
 
 export const convexTable: ConvexTableFn = Object.assign(convexTableInternal, {
   withRLS: convexTableWithRLS,

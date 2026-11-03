@@ -213,7 +213,10 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
     });
     const ormContext: OrmContextValue = {
       capabilities: options?.capabilities,
-      foreignKeyGraph: getForeignKeyGraph(schema),
+      // Lazy: built on first use (writes), not per ORM context.
+      get foreignKeyGraph() {
+        return getForeignKeyGraph(schema);
+      },
       schema,
       edgeMetadata,
       relationLoading: options?.relationLoading,

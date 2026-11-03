@@ -264,9 +264,24 @@ export function createRelationsHelper<TTables extends Schema>(
   tables: TTables
 ): RelationsBuilder<TTables> {
   const helperStatic = new RelationsHelperStatic(tables);
-  const relationsTables = Object.entries(tables).reduce<
-    Record<string, RelationsBuilderTable>
-  >((acc, [tKey, value]) => {
+  // Lazy: a table's relation columns are built on first `r.<table>` access,
+  // so a relations callback touches only the tables it names.
+  for (const [tKey, value] of Object.entries(tables)) {
+    let built: RelationsBuilderTable | undefined;
+    Object.defineProperty(helperStatic, tKey, {
+      configurable: true,
+      enumerable: true,
+      get: () => (built ??= buildRelationsTable(tKey, value)),
+    });
+  }
+  return helperStatic as any;
+}
+
+function buildRelationsTable(
+  tKey: string,
+  value: SchemaEntry
+): RelationsBuilderTable {
+  {
     const rTable = new RelationsBuilderTable(value, tKey);
     const columns = Object.entries(getTableColumns(value)).reduce<
       Record<string, RelationsBuilderColumnBase>
@@ -283,11 +298,8 @@ export function createRelationsHelper<TTables extends Schema>(
       enumerable: false,
       configurable: false,
     });
-    acc[tKey] = relationsTable;
-    return acc;
-  }, {});
-
-  return Object.assign(helperStatic, relationsTables) as any;
+    return relationsTable;
+  }
 }
 
 export function extractTablesFromSchema<TSchema extends object>(
@@ -715,9 +727,12 @@ export function buildRelations<
     tablesConfig[tsName] = {
       table: table as SchemaEntry,
       name: tsName,
-      polymorphic: (table as any)[TablePolymorphic] as
-        | readonly TablePolymorphicConfigRuntime[]
-        | undefined,
+      // Lazy: reading it builds the table.
+      get polymorphic() {
+        return (table as any)[TablePolymorphic] as
+          | readonly TablePolymorphicConfigRuntime[]
+          | undefined;
+      },
       relations: (config as AnyRelationsBuilderConfig)[tsName] ?? {},
       strict,
       defaults,

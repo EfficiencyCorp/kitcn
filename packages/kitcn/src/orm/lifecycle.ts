@@ -723,7 +723,32 @@ const createNoopLifecycle = (): OrmDbLifecycle => ({
   wrapDB: <Ctx extends AnyCtx>(ctx: Ctx): Ctx => ctx,
 });
 
+/**
+ * Lazy: the scan of every table for aggregate and rank indexes runs on the
+ * first writer context, so queries never build tables they do not touch.
+ */
 export function createOrmDbLifecycle<TSchema extends TablesRelationalConfig>(
+  schema: TSchema,
+  triggerDefinitions?: OrmTriggers<TSchema, any>,
+  capabilities?: OrmCapabilities
+): OrmDbLifecycle {
+  let built: OrmDbLifecycle | undefined;
+  const build = () =>
+    (built ??= buildOrmDbLifecycle(schema, triggerDefinitions, capabilities));
+  return {
+    get enabled() {
+      return build().enabled;
+    },
+    wrapDB: <Ctx extends AnyCtx>(ctx: Ctx): Ctx => {
+      if (!built && !isWriterDb(ctx.db)) {
+        return ctx;
+      }
+      return build().wrapDB(ctx);
+    },
+  };
+}
+
+function buildOrmDbLifecycle<TSchema extends TablesRelationalConfig>(
   schema: TSchema,
   triggerDefinitions?: OrmTriggers<TSchema, any>,
   capabilities?: OrmCapabilities
